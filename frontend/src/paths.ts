@@ -126,8 +126,7 @@ export function projectRoleDetailUrl(orgHandler: string, projectHandler: string,
   return `/organizations/${orgHandler}/projects/${projectHandler}/settings/access-control/roles/${roleId}/edit`;
 }
 
-// 'sso-mappings' is included because the component Access Control tab strip navigates with this builder when SSO is on.
-export function componentAccessControlUrl(orgHandler: string, projectHandler: string, componentHandler: string, tab: 'roles' | 'groups' | 'sso-mappings' = 'roles'): string {
+export function componentAccessControlUrl(orgHandler: string, projectHandler: string, componentHandler: string, tab: string = 'roles'): string {
   return `/organizations/${orgHandler}/projects/${projectHandler}/components/${componentHandler}/settings/access-control/${tab}`;
 }
 

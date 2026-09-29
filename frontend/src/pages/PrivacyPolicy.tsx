@@ -31,122 +31,122 @@ export default function PrivacyPolicy(): JSX.Element {
     <Box sx={{ position: 'fixed', inset: 0, overflowY: 'auto', zIndex: 1 }}>
       <Link component="button" onClick={handleBack} sx={{ position: 'fixed', top: '5rem', left: '1.5rem', zIndex: 2, display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
         <ArrowLeft size={16} />
-        Back
+        Voltar
       </Link>
       <Box sx={{ maxWidth: 800, mx: 'auto', px: 4, py: 6 }}>
         <Typography variant="h1" gutterBottom>
-          WSO2 Integration Platform - Privacy Policy
+          NEXDOM Integration Platform - Política de Privacidade
         </Typography>
         <Link href={external.wso2} target="_blank" rel="noopener noreferrer" color="primary" sx={{ textDecoration: 'underline' }}>
-          WSO2 Integration Platform
+          NEXDOM Integration Platform
         </Link>
         <Typography variant="body1" sx={{ mt: 1, mb: 4 }}>
-          WSO2 Integration Platform monitors running Micro Integrator instances (Single or Cluster Mode) and facilitates performing various management and administration tasks related to deployed artifacts.
+          O NEXDOM Integration Platform monitora instâncias do Micro Integrator em execução (modo individual ou cluster) e facilita a realização de tarefas de gerenciamento e administração relacionadas aos artefatos implantados.
         </Typography>
 
         <Stack spacing={3}>
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Privacy Policy
+              Política de Privacidade
             </Typography>
             <Typography variant="body1" paragraph>
-              This policy describes how WSO2 Integration Platform captures your personal information, the purposes of collection, and information about the retention of your personal information.
+              Esta política descreve como o NEXDOM Integration Platform coleta suas informações pessoais, as finalidades da coleta e as informações sobre a retenção dos seus dados pessoais.
             </Typography>
             <Typography variant="body1" paragraph>
-              Please note that this policy is for reference only, and is applicable for the software as a product. WSO2 Inc. and its developers have no access to the information held within WSO2 Integration Platform. Please see the Disclaimer section for more
-              information
+              Observe que esta política serve apenas como referência e se aplica ao software como produto. A NEXDOM e seus desenvolvedores não têm acesso às informações mantidas no NEXDOM Integration Platform. Consulte a seção de Isenção de responsabilidade
+              para obter mais informações.
             </Typography>
             <Typography variant="body1">
-              Entities, organizations or individuals controlling the use and administration of WSO2 Integration Platform should create their own privacy policies setting out the manner in which data is controlled or processed by the respective entity,
-              organization or individual.
+              As entidades, organizações ou pessoas que controlam o uso e a administração do NEXDOM Integration Platform devem criar suas próprias políticas de privacidade, estabelecendo a forma como os dados são controlados ou processados pela respectiva
+              entidade, organização ou pessoa.
             </Typography>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              What is personal information?
+              O que são informações pessoais?
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform considers anything related to you, and by which you may be identified, as your personal information. This includes, but is not limited to:
+              O NEXDOM Integration Platform considera informação pessoal tudo o que estiver relacionado a você e que possa identificá-lo. Isso inclui, entre outros:
             </Typography>
             <ul style={{ margin: 0, paddingLeft: '2rem' }}>
               <li>
-                <Typography variant="body1">Your user name (except in cases where the user name created by your employer is under contract)</Typography>
+                <Typography variant="body1">Seu nome de usuário (exceto quando o nome de usuário criado pelo seu empregador estiver sujeito a contrato)</Typography>
               </li>
               <li>
-                <Typography variant="body1">Your date of birth/age</Typography>
+                <Typography variant="body1">Sua data de nascimento/idade</Typography>
               </li>
               <li>
-                <Typography variant="body1">IP address used to log in</Typography>
+                <Typography variant="body1">Endereço IP usado para entrar</Typography>
               </li>
               <li>
-                <Typography variant="body1">Your device ID if you use a device (e.g., phone or tablet) to log in</Typography>
+                <Typography variant="body1">O ID do seu dispositivo, caso você use um dispositivo (por exemplo, telefone ou tablet) para entrar</Typography>
               </li>
             </ul>
             <Typography variant="body1" paragraph sx={{ mt: 2 }}>
-              However, WSO2 Integration Platform also collects the following information that is not considered personal information, but is used only for <strong>statistical</strong> purposes. The reason for this is that this information can not be used to
-              track you.
+              No entanto, o NEXDOM Integration Platform também coleta as informações a seguir, que não são consideradas informações pessoais e são usadas apenas para fins <strong>estatísticos</strong>. Isso ocorre porque essas informações não podem ser usadas
+              para rastreá-lo.
             </Typography>
             <ul style={{ margin: 0, paddingLeft: '2rem' }}>
               <li>
-                <Typography variant="body1">City/Country from which you originated the TCP/IP connection</Typography>
+                <Typography variant="body1">Cidade/país de origem da conexão TCP/IP</Typography>
               </li>
               <li>
-                <Typography variant="body1">Time of the day that you logged in (year, month, week, hour or minute)</Typography>
+                <Typography variant="body1">Horário em que você entrou (ano, mês, semana, hora ou minuto)</Typography>
               </li>
               <li>
-                <Typography variant="body1">Type of device that you used to log in (e.g., phone or tablet)</Typography>
+                <Typography variant="body1">Tipo de dispositivo usado para entrar (por exemplo, telefone ou tablet)</Typography>
               </li>
               <li>
-                <Typography variant="body1">Operating system and generic browser information</Typography>
+                <Typography variant="body1">Sistema operacional e informações gerais do navegador</Typography>
               </li>
             </ul>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Collection of personal information
+              Coleta de informações pessoais
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform collects your information only to serve your access requirements. For example:
+              O NEXDOM Integration Platform coleta suas informações apenas para atender às suas necessidades de acesso. Por exemplo:
             </Typography>
             <ul style={{ margin: 0, paddingLeft: '2rem' }}>
               <li>
-                <Typography variant="body1">WSO2 Integration Platform uses your IP address to detect any suspicious login attempts to your account.</Typography>
+                <Typography variant="body1">O NEXDOM Integration Platform usa seu endereço IP para detectar tentativas suspeitas de acesso à sua conta.</Typography>
               </li>
               <li>
-                <Typography variant="body1">WSO2 Integration Platform uses attributes like your first name, last name, etc., to provide a rich and personalized user experience.</Typography>
+                <Typography variant="body1">O NEXDOM Integration Platform usa atributos como nome, sobrenome etc. para proporcionar uma experiência rica e personalizada.</Typography>
               </li>
               <li>
-                <Typography variant="body1">WSO2 Integration Platform uses your security questions and answers only to allow account recovery.</Typography>
+                <Typography variant="body1">O NEXDOM Integration Platform usa suas perguntas e respostas de segurança apenas para permitir a recuperação da conta.</Typography>
               </li>
             </ul>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Tracking Technologies
+              Tecnologias de rastreamento
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform collects your information by:
+              O NEXDOM Integration Platform coleta suas informações por meio de:
             </Typography>
             <ul style={{ margin: 0, paddingLeft: '2rem' }}>
               <li>
-                <Typography variant="body1">Collecting information from the user profile page where you enter your personal data.</Typography>
+                <Typography variant="body1">Coleta de informações na página de perfil de usuário, onde você insere seus dados pessoais.</Typography>
               </li>
               <li>
-                <Typography variant="body1">Tracking your IP address with HTTP request, HTTP headers, and TCP/IP.</Typography>
+                <Typography variant="body1">Rastreamento do seu endereço IP por meio de solicitações HTTP, cabeçalhos HTTP e TCP/IP.</Typography>
               </li>
               <li>
-                <Typography variant="body1">Tracking your geographic information with the IP address.</Typography>
+                <Typography variant="body1">Rastreamento das suas informações geográficas por meio do endereço IP.</Typography>
               </li>
               <li>
                 <Typography variant="body1">
-                  Tracking your login history with browser cookies. Please see our{' '}
+                  Rastreamento do seu histórico de acesso por meio de cookies do navegador. Consulte nossa{' '}
                   <Link component={NavLink} to={cookiePolicyUrl()} sx={{ textDecoration: 'underline' }}>
-                    cookie policy
+                    política de cookies
                   </Link>{' '}
-                  for more information.
+                  para obter mais informações.
                 </Typography>
               </li>
             </ul>
@@ -154,31 +154,31 @@ export default function PrivacyPolicy(): JSX.Element {
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Use of personal information
+              Uso de informações pessoais
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform will only use your personal information for the purposes for which it was collected (or for a use identified as consistent with that purpose).
+              O NEXDOM Integration Platform usará suas informações pessoais somente para as finalidades para as quais foram coletadas (ou para uma finalidade identificada como compatível com essa finalidade).
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform uses your personal information only for the following purposes.
+              O NEXDOM Integration Platform usa suas informações pessoais somente para as seguintes finalidades.
             </Typography>
             <ul style={{ margin: 0, paddingLeft: '2rem' }}>
               <li>
-                <Typography variant="body1">To provide you with a personalized user experience. WSO2 Integration Platform uses your name and uploaded profile pictures for this purpose.</Typography>
+                <Typography variant="body1">Para proporcionar uma experiência personalizada. O NEXDOM Integration Platform usa seu nome e as fotos de perfil enviadas para essa finalidade.</Typography>
               </li>
               <li>
                 <Typography variant="body1" paragraph>
-                  To protect your account from unauthorized access or potential hacking attempts. WSO2 Integration Platform uses HTTP or TCP/IP Headers for this purpose.
+                  Para proteger sua conta contra acesso não autorizado ou possíveis tentativas de invasão. O NEXDOM Integration Platform usa cabeçalhos HTTP ou TCP/IP para essa finalidade.
                 </Typography>
                 <ul style={{ paddingLeft: '2rem' }}>
                   <li>
-                    <Typography variant="body1">This includes:</Typography>
+                    <Typography variant="body1">Isso inclui:</Typography>
                     <ul style={{ paddingLeft: '2rem' }}>
                       <li>
-                        <Typography variant="body1">IP address</Typography>
+                        <Typography variant="body1">Endereço IP</Typography>
                       </li>
                       <li>
-                        <Typography variant="body1">Browser fingerprinting</Typography>
+                        <Typography variant="body1">Identificação do navegador</Typography>
                       </li>
                       <li>
                         <Typography variant="body1">Cookies</Typography>
@@ -189,18 +189,18 @@ export default function PrivacyPolicy(): JSX.Element {
               </li>
               <li>
                 <Typography variant="body1" paragraph>
-                  Derive statistical data for analytical purposes on system performance improvements. WSO2 IS will not keep any personal information after statistical calculations. Therefore, the statistical report has no means of identifying an individual
-                  person.
+                  Para obter dados estatísticos para fins analíticos e melhorias de desempenho do sistema. O NEXDOM Integration Platform não manterá informações pessoais após os cálculos estatísticos. Portanto, o relatório estatístico não permite identificar
+                  uma pessoa.
                 </Typography>
                 <ul style={{ paddingLeft: '2rem' }}>
                   <li>
-                    <Typography variant="body1">WSO2 Integration Platform may use:</Typography>
+                    <Typography variant="body1">O NEXDOM Integration Platform pode usar:</Typography>
                     <ul style={{ paddingLeft: '2rem' }}>
                       <li>
-                        <Typography variant="body1">IP Address to derive geographic information</Typography>
+                        <Typography variant="body1">Endereço IP para obter informações geográficas</Typography>
                       </li>
                       <li>
-                        <Typography variant="body1">Browser fingerprinting to determine the browser technology or/and version</Typography>
+                        <Typography variant="body1">Identificação do navegador para determinar a tecnologia e/ou a versão do navegador</Typography>
                       </li>
                     </ul>
                   </li>
@@ -211,124 +211,115 @@ export default function PrivacyPolicy(): JSX.Element {
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Disclosure of personal information
+              Divulgação de informações pessoais
             </Typography>
             <Typography variant="body1">
-              WSO2 Integration Platform only discloses personal information to the relevant applications (also known as &quot;Service Providers&quot;) that are registered with WSO2 Integration Platform. These applications are registered by the identity
-              administrator of your entity or organization. Personal information is disclosed only for the purposes for which it was collected (or for a use identified as consistent with that purpose), as controlled by such Service Providers, unless you have
-              consented otherwise or where it is required by law.
+              O NEXDOM Integration Platform divulga informações pessoais somente aos aplicativos relevantes (também conhecidos como &quot;provedores de serviços&quot;) registrados no NEXDOM Integration Platform. Esses aplicativos são registrados pelo
+              administrador de identidade da sua entidade ou organização. As informações pessoais são divulgadas somente para as finalidades para as quais foram coletadas (ou para uma finalidade identificada como compatível com essa finalidade), conforme
+              controlado por esses provedores de serviços, salvo se você tiver consentido de outra forma ou quando exigido por lei.
             </Typography>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Legal process
+              Processo legal
             </Typography>
             <Typography variant="body1">
-              Please note that the organization, entity or individual running WSO2 Integration Platform may be compelled to disclose your personal information with or without your consent when it is required by law following due and lawful process.
+              Observe que a organização, entidade ou pessoa que administra o NEXDOM Integration Platform poderá ser obrigada a divulgar suas informações pessoais, com ou sem seu consentimento, quando isso for exigido por lei mediante o devido processo legal.
             </Typography>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Storage of personal information
+              Armazenamento de informações pessoais
             </Typography>
 
             <Typography variant="h4" component="h3" gutterBottom>
-              Where your personal information is stored
+              Onde suas informações pessoais são armazenadas
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform stores your personal information in secured databases. WSO2 Integration Platform exercises proper industry accepted security measures to protect the database where your personal information is held. WSO2 Integration
-              Platform as a product does not transfer or share your data with any third parties or locations.
+              O NEXDOM Integration Platform armazena suas informações pessoais em bancos de dados seguros. O NEXDOM Integration Platform aplica medidas de segurança adequadas e aceitas pelo setor para proteger o banco de dados onde suas informações pessoais
+              são mantidas. Como produto, o NEXDOM Integration Platform não transfere nem compartilha seus dados com terceiros ou outras localidades.
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform may use encryption to keep your personal data with an added level of security.
+              O NEXDOM Integration Platform pode usar criptografia para manter seus dados pessoais com um nível adicional de segurança.
             </Typography>
 
             <Typography variant="h4" component="h3" gutterBottom>
-              How long your personal information is retained
+              Por quanto tempo suas informações pessoais são retidas
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform retains your personal data as long as you are an active user of our system. You can update your personal data at any time using the given self-care user portals.
+              O NEXDOM Integration Platform retém seus dados pessoais enquanto você for um usuário ativo do sistema. Você pode atualizar seus dados pessoais a qualquer momento usando os portais de autoatendimento disponíveis.
             </Typography>
             <Typography variant="body1" paragraph>
-              WSO2 Integration Platform may keep hashed secrets to provide you with an added level of security. This includes:
+              O NEXDOM Integration Platform pode manter segredos com hash para oferecer um nível adicional de segurança. Isso inclui:
             </Typography>
             <ul style={{ margin: 0, paddingLeft: '2rem' }}>
               <li>
-                <Typography variant="body1">Current password</Typography>
+                <Typography variant="body1">Senha atual</Typography>
               </li>
               <li>
-                <Typography variant="body1">Previously used passwords</Typography>
+                <Typography variant="body1">Senhas usadas anteriormente</Typography>
               </li>
             </ul>
 
             <Typography variant="h4" component="h3" gutterBottom sx={{ mt: 2 }}>
-              How to request removal of your personal information
+              Como solicitar a remoção das suas informações pessoais
             </Typography>
             <Typography variant="body1" paragraph>
-              You can request the administrator to delete your account. The administrator is the administrator of the organization you are registered under, or the super-administrator if you do not use the organization feature.
+              Você pode solicitar ao administrador a exclusão da sua conta. O administrador é o responsável pela organização na qual você está registrado ou o superadministrador, caso o recurso de organização não seja usado.
             </Typography>
-            <Typography variant="body1">Additionally, you can request to anonymize all traces of your activities that WSO2 Integration Platform may have retained in logs, databases or analytical storage.</Typography>
+            <Typography variant="body1">Além disso, você pode solicitar a anonimização de todos os vestígios das suas atividades que o NEXDOM Integration Platform possa ter mantido em logs, bancos de dados ou armazenamento analítico.</Typography>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              More information
+              Mais informações
             </Typography>
 
             <Typography variant="h4" component="h3" gutterBottom>
-              Changes to this policy
+              Alterações nesta política
             </Typography>
             <Typography variant="body1" paragraph>
-              Upgraded versions of WSO2 Integration Platform may contain changes to this policy and revisions to this policy will be packaged within such upgrades. Such changes would only apply to users who choose to use upgraded versions.
+              As versões atualizadas do NEXDOM Integration Platform podem conter alterações nesta política, e as revisões serão incluídas nessas atualizações. Essas alterações se aplicarão somente aos usuários que optarem por usar versões atualizadas.
             </Typography>
             <Typography variant="body1" paragraph>
-              The organization running WSO2 Integration Platform may revise the Privacy Policy from time to time. You can find the most recent governing policy with the respective link provided by the organization running WSO2 Integration Platform. The
-              organization will notify any changes to the privacy policy over our official public channels.
+              A organização que administra o NEXDOM Integration Platform pode revisar a Política de Privacidade periodicamente. Você encontrará a versão vigente mais recente no respectivo link fornecido pela organização que administra o NEXDOM Integration
+              Platform. A organização notificará quaisquer alterações na política de privacidade por seus canais públicos oficiais.
             </Typography>
 
             <Typography variant="h4" component="h3" gutterBottom>
-              Your choices
+              Suas escolhas
             </Typography>
             <Typography variant="body1" paragraph>
-              If you already have a user account within WSO2 Integration Platform, you have the right to deactivate your account if you find that this privacy policy is unacceptable to you.
+              Se você já tem uma conta de usuário no NEXDOM Integration Platform, tem o direito de desativá-la caso considere esta política de privacidade inaceitável.
             </Typography>
             <Typography variant="body1" paragraph>
-              If you do not have an account and you do not agree with our privacy policy, you can choose not to create one.
+              Se você não tem uma conta e não concorda com nossa política de privacidade, pode optar por não criar uma.
             </Typography>
 
             <Typography variant="h4" component="h3" gutterBottom>
-              Contact us
+              Fale conosco
             </Typography>
             <Typography variant="body1" paragraph>
-              Please contact WSO2 if you have any questions or concerns regarding this privacy policy.
+              Entre em contato com o administrador do NEXDOM se tiver dúvidas ou preocupações relacionadas a esta política de privacidade.
             </Typography>
-            <Link href={external.wso2Contact} target="_blank" rel="noopener noreferrer" color="primary" sx={{ textDecoration: 'underline' }}>
-              {external.wso2Contact}
-            </Link>
           </section>
 
           <section>
             <Typography variant="h3" component="h2" gutterBottom>
-              Disclaimer
+              Isenção de responsabilidade
             </Typography>
-            <ol style={{ margin: 0, paddingLeft: '2rem' }}>
-              <li>
-                <Typography variant="body1" paragraph>
-                  WSO2, its employees, partners, and affiliates do not have access to and do not require, store, process or control any of the data, including personal data contained in WSO2 Integration Platform. All data, including personal data is controlled
-                  and processed by the entity or individual running WSO2 Integration Platform. WSO2, its employees partners and affiliates are not a data processor or a data controller within the meaning of any data privacy regulations. WSO2 does not provide
-                  any warranties or undertake any responsibility or liability in connection with the lawfulness or the manner and purposes for which WSO2 Integration Platform is used by such entities or persons.
-                </Typography>
-              </li>
-              <li>
-                <Typography variant="body1">
-                  This privacy policy is for the informational purposes of the entity or persons running WSO2 IS and sets out the processes and functionality contained within WSO2 Integration Platform regarding personal data protection. It is the
-                  responsibility of entities and persons running WSO2 Integration Platform to create and administer its own rules and processes governing users&apos; personal data, and such rules and processes may change the use, storage and disclosure
-                  policies contained herein. Therefore users should consult the entity or persons running WSO2 Integration Platform for its own privacy policy for details governing users&apos; personal data.
-                </Typography>
-              </li>
-            </ol>
+            <Typography variant="body1" paragraph>
+              Esta aplicação é uma customização do WSO2 Integration Control Plane, licenciada sob a Apache License 2.0. O projeto original e esta customização são fornecidos sem garantias, conforme descrito na licença.
+            </Typography>
+            <Typography variant="body1">
+              A aplicação é fornecida sem garantias ou responsabilidades além do que está estabelecido nos termos da licença aplicável. O projeto original e esta customização permanecem sujeitos à Apache License 2.0, disponível em{' '}
+              <Link href="https://www.apache.org/licenses/LICENSE-2.0" target="_blank" rel="noopener noreferrer" color="primary" sx={{ textDecoration: 'underline' }}>
+                apache.org/licenses/LICENSE-2.0
+              </Link>
+              .
+            </Typography>
           </section>
         </Stack>
       </Box>

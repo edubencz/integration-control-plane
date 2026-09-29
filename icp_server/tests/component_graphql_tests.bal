@@ -246,7 +246,7 @@ function testGetComponentByProjectAndHandler() returns error? {
 }
 function testCreateComponentSuccess() returns error? {
     string mutation = string `
-        mutation CreateComponent($component: ComponentInput!) {
+        mutation CreateComponent($component: ComponentCreateInput!) {
             createComponent(component: $component) {
                 id
                 name
@@ -290,7 +290,7 @@ function testCreateComponentSuccess() returns error? {
 }
 function testCreateComponentWithoutComponentType() returns error? {
     string mutation = string `
-        mutation CreateComponent($component: ComponentInput!) {
+        mutation CreateComponent($component: ComponentCreateInput!) {
             createComponent(component: $component) {
                 id
                 name
@@ -363,7 +363,7 @@ function testUpdateComponentWithoutComponentType() returns error? {
 }
 function testCreateComponentNoPermission() returns error? {
     string mutation = string `
-        mutation CreateComponent($component: ComponentInput!) {
+        mutation CreateComponent($component: ComponentCreateInput!) {
             createComponent(component: $component) {
                 id
                 name
@@ -467,7 +467,7 @@ function testGetComponentArtifactTypesNoPermission() returns error? {
 }
 function testCreateComponentAcceptsEveryIntegrationType() returns error? {
     string mutation = string `
-        mutation CreateComponent($component: ComponentInput!) {
+        mutation CreateComponent($component: ComponentCreateInput!) {
             createComponent(component: $component) {
                 id
                 displayType
@@ -518,7 +518,7 @@ function testCreateComponentAcceptsEveryIntegrationType() returns error? {
 }
 function testCreateComponentRejectsUnknownIntegrationType() returns error? {
     string mutation = string `
-        mutation CreateComponent($component: ComponentInput!) {
+        mutation CreateComponent($component: ComponentCreateInput!) {
             createComponent(component: $component) { id }
         }
     `;
@@ -547,7 +547,7 @@ function testCreateComponentRejectsUnknownIntegrationType() returns error? {
 }
 function testUpdateComponentToUnspecifiedType() returns error? {
     string createMutation = string `
-        mutation CreateComponent($component: ComponentInput!) {
+        mutation CreateComponent($component: ComponentCreateInput!) {
             createComponent(component: $component) { id }
         }
     `;

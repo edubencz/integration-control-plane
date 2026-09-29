@@ -28,6 +28,10 @@ interface RuntimeConfig {
   VITE_OBSERVABILITY_URL?: string;
   VITE_WORKFLOW_URL?: string;
   VITE_TRYIT_URL?: string;
+  VITE_MI_APPLICATIONS_URL?: string;
+  VITE_MI_SERVER_URL?: string;
+  VITE_MI_REGISTRY_URL?: string;
+  VITE_MI_DEPLOYMENTS_URL?: string;
   VITE_WS_URL?: string;
   VITE_SSO_ENABLED?: boolean;
   VITE_SSO_ISSUER?: string;
@@ -43,6 +47,10 @@ export interface ApiConfig {
   observabilityUrl: string;
   workflowUrl: string;
   tryitUrl: string;
+  miApplicationsUrl: string;
+  miServerUrl: string;
+  miRegistryUrl: string;
+  miDeploymentsUrl: string;
   wsUrl: string;
   ssoEnabled: boolean;
   ssoIssuer: string;
@@ -66,6 +74,10 @@ const DEFAULT_CONFIG: ApiConfig = {
   observabilityUrl: 'https://localhost:9446/icp/observability',
   workflowUrl: 'https://localhost:9446/icp/workflow',
   tryitUrl: 'https://localhost:9446/icp/tryit',
+  miApplicationsUrl: 'https://localhost:9446/icp/mi_applications',
+  miServerUrl: 'https://localhost:9446/icp/mi_server',
+  miRegistryUrl: 'https://localhost:9446/icp/mi_registry',
+  miDeploymentsUrl: 'https://localhost:9446/icp/mi_deployments',
   wsUrl: 'wss://localhost:9446/runtime-status',
   ssoEnabled: false,
   ssoIssuer: '',
@@ -94,6 +106,10 @@ export async function loadConfig(): Promise<void> {
       observabilityUrl: config.VITE_OBSERVABILITY_URL || DEFAULT_CONFIG.observabilityUrl,
       workflowUrl: config.VITE_WORKFLOW_URL || DEFAULT_CONFIG.workflowUrl,
       tryitUrl: config.VITE_TRYIT_URL || DEFAULT_CONFIG.tryitUrl,
+      miApplicationsUrl: config.VITE_MI_APPLICATIONS_URL || DEFAULT_CONFIG.miApplicationsUrl,
+      miServerUrl: config.VITE_MI_SERVER_URL || DEFAULT_CONFIG.miServerUrl,
+      miRegistryUrl: config.VITE_MI_REGISTRY_URL || DEFAULT_CONFIG.miRegistryUrl,
+      miDeploymentsUrl: config.VITE_MI_DEPLOYMENTS_URL || DEFAULT_CONFIG.miDeploymentsUrl,
       wsUrl: config.VITE_WS_URL || DEFAULT_CONFIG.wsUrl,
       ssoEnabled: config.VITE_SSO_ENABLED ?? DEFAULT_CONFIG.ssoEnabled,
       ssoIssuer: config.VITE_SSO_ISSUER || DEFAULT_CONFIG.ssoIssuer,
@@ -152,3 +168,38 @@ export const workflowApiUrl = (componentId: string, environmentId: string, subpa
  */
 export const tryitApiUrl = (componentId: string, environmentId: string, runtimeId: string, port: number, subpath: string): string =>
   `${window.API_CONFIG.tryitUrl.replace(/\/+$/, '')}/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}/${port}${subpath}`;
+
+/** Builds a URL to the MI REST API Try-It proxy. The API name is resolved and
+ * authorized server-side; the browser never supplies the runtime host/port. */
+export const miTryitApiUrl = (componentId: string, environmentId: string, runtimeId: string, apiName: string): string =>
+  `${window.API_CONFIG.tryitUrl.replace(/\/+$/, '')}/mi/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}/${encodeURIComponent(apiName)}`;
+
+/** Builds a URL to the MI inbound endpoint Try-It proxy (for MCP server testing).
+ * The inbound name is resolved server-side with ownership validation, and the target path is
+ * always the inbound's own resolved context (e.g. "/mcp") — this URL must not append another
+ * path segment on top of it (an MCP inbound serves exactly one path, its configured context).
+ * `queryString` is appended as-is and must include its own leading "?", e.g. "?sessionId=...". */
+export const mcpInboundRpcApiUrl = (componentId: string, environmentId: string, runtimeId: string, inboundName: string, queryString: string): string =>
+  `${window.API_CONFIG.tryitUrl.replace(/\/+$/, '')}/mi-inbound/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}/${encodeURIComponent(inboundName)}${queryString}`;
+
+/** Builds a URL to the MI inbound endpoint SSE proxy (for establishing MCP server sessions).
+ * Used to open the long-lived SSE connection to obtain the sessionId. */
+export const mcpInboundSseApiUrl = (componentId: string, environmentId: string, runtimeId: string, inboundName: string): string =>
+  `${window.API_CONFIG.tryitUrl.replace(/\/+$/, '')}/mi-inbound-sse/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}/${encodeURIComponent(inboundName)}`;
+
+export const miApplicationsApiUrl = (componentId: string, environmentId: string, runtimeId: string, appName?: string): string =>
+  `${window.API_CONFIG.miApplicationsUrl.replace(/\/+$/, '')}/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}${appName ? `/${encodeURIComponent(appName)}` : ''}`;
+
+/** Builds the runtime-scoped Carbon Application download URL. The ICP proxy
+ * forwards this as an octet-stream request to the MI Management API. */
+export const miApplicationDownloadApiUrl = (componentId: string, environmentId: string, runtimeId: string, appName: string): string =>
+  `${miApplicationsApiUrl(componentId, environmentId, runtimeId, appName)}?download=true`;
+
+export const miServerApiUrl = (componentId: string, environmentId: string, runtimeId: string): string =>
+  `${window.API_CONFIG.miServerUrl.replace(/\/+$/, '')}/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}`;
+
+export const miRegistryApiUrl = (componentId: string, environmentId: string, runtimeId: string, resource: 'content' | 'properties', query: Record<string, string> = {}): string => {
+  const params = new URLSearchParams(query);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  return `${window.API_CONFIG.miRegistryUrl.replace(/\/+$/, '')}/${encodeURIComponent(componentId)}/${encodeURIComponent(environmentId)}/${encodeURIComponent(runtimeId)}/${resource}${suffix}`;
+};

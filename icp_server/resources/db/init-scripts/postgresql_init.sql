@@ -241,7 +241,9 @@ CREATE TABLE permissions (
         'Observability-Management',
         'Project-Management',
         'User-Management',
-        'Workflow-Management'
+        'Workflow-Management',
+        'Audit-Management',
+        'Deployment-Management'
     )),
     resource_type VARCHAR(100) NOT NULL,
     action VARCHAR(100) NOT NULL,
@@ -508,7 +510,7 @@ INSERT INTO
     organizations (org_id, org_name, org_handle)
 VALUES (
         1,
-        'Default Organization',
+        'NEXDOM Healthtech',
         'default'
     );
 
@@ -553,6 +555,12 @@ INSERT INTO permissions (permission_id, permission_name, permission_domain, reso
     ('a1f4c2e0-0000-4000-8000-000000000002', 'workflow_mgt:manage_human_tasks', 'Workflow-Management', 'human_task', 'manage', 'Complete, fail and cancel human tasks'),
     ('a1f4c2e0-0000-4000-8000-000000000003', 'workflow_mgt:view_workflows', 'Workflow-Management', 'workflow', 'view', 'View workflow executions'),
     ('a1f4c2e0-0000-4000-8000-000000000004', 'workflow_mgt:manage_workflows', 'Workflow-Management', 'workflow', 'manage', 'Start, suspend, resume, cancel and terminate workflow executions');
+
+INSERT INTO permissions (permission_id, permission_name, permission_domain, resource_type, action, description)
+VALUES (gen_random_uuid()::text, 'audit_mgt:view', 'Audit-Management', 'audit_logs', 'view', 'View audit logs');
+INSERT INTO permissions (permission_id, permission_name, permission_domain, resource_type, action, description) VALUES
+('d1f4c2e0-0000-4000-8000-000000000001', 'deployment_mgt:view', 'Deployment-Management', 'deployment', 'view', 'View MI deployment operations'),
+('d1f4c2e0-0000-4000-8000-000000000002', 'deployment_mgt:manage', 'Deployment-Management', 'deployment', 'manage', 'Create and execute MI deployment operations');
 
 -- Map Super Admin to ALL permissions
 INSERT INTO role_permission_mapping (role_id, permission_id)
@@ -1381,6 +1389,9 @@ CREATE TABLE audit_logs (
     id BIGSERIAL PRIMARY KEY,
     runtime_id CHAR(36) NULL,
     user_id CHAR(36) NULL,
+    org_id INT NULL DEFAULT 1,
+    event_source VARCHAR(30) NOT NULL DEFAULT 'RUNTIME',
+    actor_username VARCHAR(255) NULL,
     action VARCHAR(100) NOT NULL,
     resource_type VARCHAR(50) NULL, -- runtime, service, listener, command
     resource_id VARCHAR(200) NULL,
@@ -1399,6 +1410,7 @@ CREATE INDEX idx_al_action ON audit_logs(action);
 CREATE INDEX idx_al_resource_type ON audit_logs(resource_type);
 CREATE INDEX idx_al_timestamp ON audit_logs(timestamp);
 CREATE INDEX idx_al_client_ip ON audit_logs(client_ip);
+CREATE INDEX idx_al_source_timestamp ON audit_logs(event_source, timestamp);
 
 CREATE TABLE system_events (
     id BIGSERIAL PRIMARY KEY,
@@ -1525,59 +1537,81 @@ CREATE TABLE reconcile_backoff (
     next_attempt BIGINT NOT NULL DEFAULT 0,
     PRIMARY KEY (runtime_id, artifact_name, artifact_type, state_key)
 );
+
 -- ============================================================================
--- SAMPLE DATA FOR TESTING
+-- MI DEPLOYMENTS
 -- ============================================================================
 
--- Note: Default organization and super admin user are created in RBAC V2 SEED DATA section above
+CREATE TABLE mi_deployment_artifacts (
+    artifact_id VARCHAR(36) PRIMARY KEY,
+    file_name VARCHAR(255) NOT NULL,
+    artifact_name VARCHAR(255) NOT NULL,
+    artifact_version VARCHAR(100) NOT NULL,
+    sha256 VARCHAR(64) NOT NULL,
+    file_size BIGINT NOT NULL,
+    content BYTEA NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
 
--- Note: User credentials are stored in a separate H2 database (credentialsdb)
--- accessed only by the default auth backend. See resources/db/init-scripts/credentials_h2_init.sql
+CREATE TABLE mi_deployment_operations (
+    deployment_id VARCHAR(36) PRIMARY KEY,
+    org_id INT NOT NULL,
+    org_handler VARCHAR(255) NOT NULL,
+    artifact_id VARCHAR(36) NOT NULL,
+    status VARCHAR(40) NOT NULL,
+    created_by VARCHAR(255) NOT NULL,
+    parent_deployment_id VARCHAR(36),
+    version INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL
+);
 
--- Insert sample environments
-INSERT INTO
-    environments (
-        environment_id,
-        name,
-        handler,
-        description,
-        region,
-        cluster_id,
-        choreo_env,
-        external_apim_env_name,
-        internal_apim_env_name,
-        sandbox_apim_env_name,
-        critical,
-        dns_prefix,
-        created_by
-    )
-VALUES (
-        '750e8400-e29b-41d4-a716-446655440001',
-        'dev',
-        'dev',
-        'Development environment',
-        'us-east-1',
-        'cluster-abc123',
-        'dev',
-        'dev-external',
-        'dev-internal',
-        'dev-sandbox',
-        FALSE,
-        'dev',
-        NULL
-    ),
-    (
-        '750e8400-e29b-41d4-a716-446655440002',
-        'prod',
-        'prod',
-        'Production environment',
-        'us-east-1',
-        'cluster-abc123',
-        'prod',
-        'prod-external',
-        'prod-internal',
-        'prod-sandbox',
-        TRUE,
-        'prod',
-        NULL
-    );
+CREATE TABLE mi_deployment_targets (
+    target_id VARCHAR(36) PRIMARY KEY,
+    deployment_id VARCHAR(36) NOT NULL REFERENCES mi_deployment_operations(deployment_id) ON DELETE CASCADE,
+    project_id VARCHAR(36) NOT NULL,
+    component_id VARCHAR(36) NOT NULL,
+    environment_id VARCHAR(36) NOT NULL,
+    runtime_id VARCHAR(36) NOT NULL,
+    production BOOLEAN NOT NULL,
+    eligible BOOLEAN NOT NULL,
+    conflict BOOLEAN NOT NULL,
+    delete_before_upload BOOLEAN NOT NULL DEFAULT FALSE,
+    phase VARCHAR(40) NOT NULL,
+    attempt INT NOT NULL DEFAULT 0,
+    lease_until TIMESTAMPTZ,
+    http_status INT,
+    reason VARCHAR(1000),
+    message VARCHAR(4000),
+    evidence TEXT,
+    updated_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE mi_deployment_events (
+    event_id VARCHAR(36) PRIMARY KEY,
+    deployment_id VARCHAR(36) NOT NULL REFERENCES mi_deployment_operations(deployment_id) ON DELETE CASCADE,
+    target_id VARCHAR(36),
+    phase VARCHAR(40) NOT NULL,
+    message VARCHAR(4000) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL
+);
+
+-- Apply once after add_mi_deployments_feature_postgresql.sql. Existing history is retained.
+ALTER TABLE mi_deployment_operations ADD started_at VARCHAR(40) NULL;
+ALTER TABLE mi_deployment_operations ADD finished_at VARCHAR(40) NULL;
+ALTER TABLE mi_deployment_operations ADD duration_ms BIGINT NULL;
+ALTER TABLE mi_deployment_operations ADD selected_project_ids TEXT NULL;
+ALTER TABLE mi_deployment_targets ADD project_name VARCHAR(255) NULL;
+ALTER TABLE mi_deployment_targets ADD component_name VARCHAR(255) NULL;
+ALTER TABLE mi_deployment_targets ADD environment_name VARCHAR(255) NULL;
+ALTER TABLE mi_deployment_targets ADD runtime_name VARCHAR(255) NULL;
+ALTER TABLE mi_deployment_targets ADD started_at VARCHAR(40) NULL;
+ALTER TABLE mi_deployment_targets ADD finished_at VARCHAR(40) NULL;
+ALTER TABLE mi_deployment_targets ADD duration_ms BIGINT NULL;
+ALTER TABLE mi_deployment_events ADD reason VARCHAR(1000) NULL;
+ALTER TABLE mi_deployment_events ADD http_status INT NULL;
+ALTER TABLE mi_deployment_events ADD evidence TEXT NULL;
+CREATE INDEX idx_mi_dep_org_created ON mi_deployment_operations (org_handler, created_at);
+CREATE INDEX idx_mi_dep_target_op ON mi_deployment_targets (deployment_id);
+CREATE INDEX idx_mi_dep_event_op ON mi_deployment_events (deployment_id, created_at);

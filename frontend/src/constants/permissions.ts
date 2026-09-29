@@ -1,4 +1,7 @@
 export const Permissions = {
+  // Organization deployment orchestration
+  DEPLOYMENT_VIEW: 'deployment_mgt:view',
+  DEPLOYMENT_MANAGE: 'deployment_mgt:manage',
   // Integration Management
   INTEGRATION_VIEW: 'integration_mgt:view',
   INTEGRATION_EDIT: 'integration_mgt:edit',
@@ -30,6 +33,7 @@ export const Permissions = {
   USER_MANAGE_ROLES: 'user_mgt:manage_roles',
   USER_UPDATE_GROUP_ROLES: 'user_mgt:update_group_roles',
   USER_VIEW: 'user_mgt:view',
+  AUDIT_VIEW: 'audit_mgt:view',
 } as const;
 
 export const ALL_ROLE_MODIFY_PERMISSIONS = [Permissions.USER_MANAGE_USERS, Permissions.USER_MANAGE_GROUPS, Permissions.USER_MANAGE_ROLES, Permissions.USER_UPDATE_GROUP_ROLES] as const;

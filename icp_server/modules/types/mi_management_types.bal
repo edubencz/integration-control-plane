@@ -14,6 +14,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+import ballerina/http;
+
 
 // MI Management API Response Types
 // These types reflect what the MI Management REST API returns
@@ -249,6 +251,11 @@ public type MgmtDeleteLoggerResponse record {
 };
 
 // Validated Registry Access
+public type RegistryApiClient record {|
+    http:Client mgmtClient;
+    string hmacToken;
+|};
+
 public type ValidatedRegistryAccess record {|
     Runtime runtime;
     string trimmedPath;
@@ -283,6 +290,18 @@ public type RegistryPropertiesResponse record {
     *Fetchable;
     int count = 0;
     RegistryProperty[] properties = [];
+};
+
+public type RegistrySearchItem record {
+    string name;
+    string path;
+    string mediaType;
+    boolean isDirectory;
+};
+
+public type RegistrySearchResponse record {
+    int count;
+    RegistrySearchItem[] items;
 };
 
 // A data service's structured overview, which the runtime may not have answered yet.

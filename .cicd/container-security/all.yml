@@ -1,0 +1,3 @@
+include:
+  - local: .cicd/container-security/job.yml
+  - local: .cicd/container-security/rules.yml

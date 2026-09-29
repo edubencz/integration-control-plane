@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { OxygenUIThemeProvider, AcrylicOrangeTheme } from '@wso2/oxygen-ui';
+import { OxygenUIThemeProvider, AcrylicOrangeTheme, extendTheme } from '@wso2/oxygen-ui';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter } from 'react-router';
 import { StrictMode } from 'react';
@@ -30,6 +30,54 @@ import { NotificationsProvider } from './contexts/NotificationsContext';
 import { TimeZoneProvider } from './contexts/TimeZoneContext';
 import { AuthError } from './api/graphql';
 import './index.css';
+
+const NEXDOM_TEAL = '#004F51';
+
+const NexdomTheme = extendTheme(AcrylicOrangeTheme, {
+  components: {
+    MuiButton: {
+      styleOverrides: {
+        containedPrimary: {
+          background: `${NEXDOM_TEAL} !important`,
+          color: '#fff !important',
+          '&:hover': {
+            background: `${NEXDOM_TEAL} !important`,
+            opacity: 0.9,
+            color: '#fff !important',
+          },
+          '&:focus-visible': {
+            outline: `2px solid ${NEXDOM_TEAL}`,
+            outlineOffset: 2,
+          },
+        },
+        outlinedPrimary: {
+          borderColor: NEXDOM_TEAL,
+          color: NEXDOM_TEAL,
+          '&:hover': {
+            borderColor: NEXDOM_TEAL,
+            color: NEXDOM_TEAL,
+            backgroundColor: 'rgba(0, 79, 81, 0.08)',
+          },
+          '&:focus-visible': {
+            outline: `2px solid ${NEXDOM_TEAL}`,
+            outlineOffset: 2,
+          },
+        },
+        textPrimary: {
+          color: NEXDOM_TEAL,
+          '&:hover': {
+            color: NEXDOM_TEAL,
+            backgroundColor: 'rgba(0, 79, 81, 0.08)',
+          },
+          '&:focus-visible': {
+            outline: `2px solid ${NEXDOM_TEAL}`,
+            outlineOffset: 2,
+          },
+        },
+      },
+    },
+  },
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,7 +98,7 @@ const queryClient = new QueryClient({
 loadConfig().then(() => {
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
-      <OxygenUIThemeProvider themes={[{ key: 'acrylicOrange', label: 'Acrylic Orange Theme', theme: AcrylicOrangeTheme }]} initialTheme="acrylicOrange">
+      <OxygenUIThemeProvider themes={[{ key: 'nexdomCoral', label: 'NEXDOM Coral Theme', theme: NexdomTheme }]} initialTheme="nexdomCoral">
         <NotificationsProvider>
           <QueryClientProvider client={queryClient}>
             <BrowserRouter>

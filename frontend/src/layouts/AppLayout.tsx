@@ -50,7 +50,7 @@ import { useRef, useState } from 'react';
 import type { JSX } from 'react';
 import { useNavigate, Outlet, NavLink } from 'react-router';
 import Logo from '../components/Logo';
-import { BarChart3, Bell, Building, ChevronDown, ChevronRight, FlaskConical, Layers, LayoutDashboard, LogOut, Plus, ScrollText, Search, Server, Shield, Sliders, User as UserIcon, UserCheck, Workflow, X } from '@wso2/oxygen-ui-icons-react';
+import { BarChart3, Bell, Building, ChevronDown, ChevronRight, FileClock, FlaskConical, Layers, LayoutDashboard, LogOut, Plus, Rocket, ScrollText, Search, Server, Shield, Sliders, User as UserIcon, UserCheck, Workflow, X } from '@wso2/oxygen-ui-icons-react';
 import { useProjectByHandler, useProjects, useComponents, useAllEnvironments } from '../api/queries';
 import { useMultiEnvRuntimeStatusSubscription } from '../api/subscriptions';
 import { useNotificationPreferences } from '../hooks/useNotificationPreferences';
@@ -74,7 +74,9 @@ const SIDEBAR_ICONS: Record<Resource, JSX.Element> = {
   metrics: <BarChart3 size={20} />,
   runtimes: <Server size={20} />,
   environments: <Layers size={20} />,
+  deployments: <Rocket size={20} />,
   'access-control': <Shield size={20} />,
+  'audit-logs': <FileClock size={20} />,
 };
 
 const SIDEBAR_CATEGORIES: { label: string; resources: Resource[] }[] = [
@@ -82,8 +84,13 @@ const SIDEBAR_CATEGORIES: { label: string; resources: Resource[] }[] = [
   { label: 'Manage', resources: ['workflows', 'tasks'] },
   { label: 'Observability', resources: ['logs', 'loggers', 'metrics'] },
   { label: 'Infrastructure', resources: ['environments'] },
-  { label: 'Management', resources: ['access-control'] },
+  { label: 'Management', resources: ['deployments', 'audit-logs', 'access-control'] },
 ];
+
+// Keep the options object stable. Oxygen's useAppShell observes its options
+// object in an effect; creating it during every render causes a state update
+// loop while any page is active.
+const APP_SHELL_OPTIONS = { initialCollapsed: true } as const;
 
 export default function AppLayout(): JSX.Element {
   const navigate = useNavigate();
@@ -91,9 +98,9 @@ export default function AppLayout(): JSX.Element {
   const resource = useResource();
 
   const { username, displayName, logout } = useAuth();
-  const { hasAnyPermission } = useAccessControl();
+  const { hasAnyPermission, hasOrgPermission } = useAccessControl();
 
-  const { state: shell, actions } = useAppShell({ initialCollapsed: true });
+  const { state: shell, actions } = useAppShell(APP_SHELL_OPTIONS);
   const [tabIndex, setTabIndex] = useState(0);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const orgCardRef = useRef<HTMLDivElement>(null);
@@ -158,6 +165,10 @@ export default function AppLayout(): JSX.Element {
         return 'runtimes';
       case 'environments':
         return 'environments';
+      case 'audit-logs':
+        return 'audit-logs';
+      case 'deployments':
+        return hasOrgPermission(Permissions.DEPLOYMENT_VIEW) || hasOrgPermission(Permissions.DEPLOYMENT_MANAGE) ? 'deployments' : 'overview';
     }
   };
 
@@ -169,6 +180,8 @@ export default function AppLayout(): JSX.Element {
     accessControlPerms.push(Permissions.INTEGRATION_EDIT, Permissions.INTEGRATION_MANAGE);
   }
   const canSeeAccessControl = hasAnyPermission(accessControlPerms, projectId || undefined, componentId);
+  const canSeeAuditLogs = scope.level === 'organizations' && hasOrgPermission(Permissions.AUDIT_VIEW);
+  const canSeeDeployments = scope.level === 'organizations' && (hasOrgPermission(Permissions.DEPLOYMENT_VIEW) || hasOrgPermission(Permissions.DEPLOYMENT_MANAGE));
   // Two integration-level entries depend on the integration's type, and each stays hidden until
   // `currentComponent` resolves — the same way access control waits on its permissions — so neither is
   // offered and then withdrawn once the type is known.
@@ -181,6 +194,8 @@ export default function AppLayout(): JSX.Element {
   const showTest = !!currentComponent && !isWorkflowIntegration(currentComponent.displayType);
   const items = sidebarItems(scope, resource)
     .filter((item) => item.resource !== 'access-control' || canSeeAccessControl)
+    .filter((item) => item.resource !== 'audit-logs' || canSeeAuditLogs)
+    .filter((item) => item.resource !== 'deployments' || canSeeDeployments)
     .filter((item) => (item.resource !== 'workflows' && item.resource !== 'tasks') || showWorkflows)
     .filter((item) => item.resource !== 'test' || showTest);
 
@@ -223,7 +238,7 @@ export default function AppLayout(): JSX.Element {
                     <ComplexSelect.MenuItem.Icon>
                       <Building />
                     </ComplexSelect.MenuItem.Icon>
-                    <ComplexSelect.MenuItem.Text primary="Default Organization" secondary="Organization" />
+                    <ComplexSelect.MenuItem.Text primary="NEXDOM Healthtech" secondary="Organization" />
                   </>
                 )}
                 label="Organizations">
@@ -231,7 +246,7 @@ export default function AppLayout(): JSX.Element {
                   <ComplexSelect.MenuItem.Icon>
                     <Building />
                   </ComplexSelect.MenuItem.Icon>
-                  <ComplexSelect.MenuItem.Text primary="Default Organization" secondary="Organization" />
+                  <ComplexSelect.MenuItem.Text primary="NEXDOM Healthtech" secondary="Organization" />
                 </ComplexSelect.MenuItem>
               </ComplexSelect>
             </Box>
@@ -631,11 +646,8 @@ export default function AppLayout(): JSX.Element {
             }}>
             Cookie Policy
           </Footer.Link>
-          <Footer.Link href="https://wso2.com/support" target="_blank" rel="noreferrer">
-            Support
-          </Footer.Link>
           {getIcpVersion() && <Footer.Version>v{getIcpVersion()}</Footer.Version>}
-          <Footer.Copyright>&copy; {new Date().getFullYear()}, WSO2 LLC.</Footer.Copyright>
+          <Footer.Copyright>&copy; {new Date().getFullYear()}, NEXDOM Healthtech.</Footer.Copyright>
         </Footer>
       </AppShell.Footer>
 

@@ -20,12 +20,17 @@ import { Globe, Link2, ListOrdered, Clock, FolderArchive, Package, Plug, FileTex
 import type { JSX } from 'react';
 import type { GqlArtifact } from '../api/queries';
 
+const ARTIFACT_DISPLAY_NAMES: Record<string, string> = {
+  CompositeApp: 'Carbon Applications',
+};
+
+/** Format artifact type name for display: "RestApi" → "Rest Api" */
 export function formatArtifactTypeName(t: string): string {
-  return t.replace(/([a-z])([A-Z])/g, '$1 $2');
+  return ARTIFACT_DISPLAY_NAMES[t] ?? t.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
 
 export function typePlural(t: string): string {
-  return t.replace(/([a-z])([A-Z])/g, '$1 $2') + '(s)';
+  return ARTIFACT_DISPLAY_NAMES[t] ?? `${t.replace(/([a-z])([A-Z])/g, '$1 $2')}(s)`;
 }
 
 export const ARTIFACT_ICONS: Record<string, JSX.Element> = {
@@ -39,6 +44,7 @@ export const ARTIFACT_ICONS: Record<string, JSX.Element> = {
   CompositeApp: <Package size={18} />,
   Connector: <Plug size={18} />,
   RegistryResource: <FolderArchive size={18} />,
+  Server: <Server size={18} />,
   Listener: <Wifi size={18} />,
   Service: <Layers size={18} />,
   Automation: <Zap size={18} />,
@@ -95,6 +101,11 @@ export const ENTRY_POINT_DETAIL_TABS: Record<string, string[]> = {
 
 export const ENTRY_POINT_TYPE_SET = new Set(Object.keys(ENTRY_POINT_CONFIG));
 
+// Fixed display order for the entry point picker's groups - independent of the order the
+// underlying useArtifacts queries happen to resolve in (they run in parallel, so that order isn't
+// stable across renders).
+export const ENTRY_POINT_GROUP_ORDER = ['RestApi', 'ProxyService', 'InboundEndpoint', 'Task', 'Service', 'Automation', 'Workflow'];
+
 export interface SelectedArtifact {
   artifact: GqlArtifact;
   artifactType: string;
@@ -105,3 +116,43 @@ export interface SelectedArtifact {
 }
 
 export type TabProps = SelectedArtifact;
+
+/** Normalizes MI's various truthy spellings for an on/off field ('enabled', 'active', true, ...). */
+export function toEnabled(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  const normalized = (value ?? '').toString().toLowerCase();
+  return normalized === 'enabled' || normalized === 'active' || normalized === 'true';
+}
+
+/** `${type}::${name|packageName}` — the entry point's stable key. Used as the MenuItem value, the
+ * URL's `entry` query param, and the lookup key back into the option list. The format must not
+ * change: it's compared against values already persisted in shared links. */
+export function entryPointKey(artifact: GqlArtifact, type: string): string {
+  const artifactKey = type === 'Automation' ? artifact.packageName : artifact.name;
+  return `${type}::${artifactKey}`;
+}
+
+export interface EntryPointOption {
+  key: string;
+  type: string;
+  /** Display name, already stripped of MI's leading slash (e.g. a RestApi's context-as-name). */
+  label: string;
+  /** The type's "secondary" identifying field (context / basePath / protocol / packageVersion), if any. */
+  meta?: string;
+  /** undefined when this artifact type reports no state at all (e.g. Automation) — never coerced
+   * to false, since "no signal" and "confirmed inactive" must not look the same in the UI. */
+  enabled?: boolean;
+  artifact: GqlArtifact;
+}
+
+/** Derives the picker/detail-panel view of a raw artifact — the single place that knows how each
+ * entry point type picks its display name and secondary field, replacing what used to be the same
+ * ternary chain duplicated across the selector's renderValue, its MenuItem and its key builder. */
+export function toEntryPointOption(artifact: GqlArtifact, type: string): EntryPointOption {
+  const cfg = ENTRY_POINT_CONFIG[type];
+  const rawLabel = (cfg?.primaryDisplay && cfg.metaField ? (artifact[cfg.metaField]?.toString() ?? artifact.name?.toString()) : type === 'Automation' ? artifact.packageName?.toString() : artifact.name?.toString()) ?? '';
+  const label = rawLabel.replace(/^\//, '');
+  const meta = cfg?.metaField ? artifact[cfg.metaField]?.toString() : undefined;
+  const enabled = artifact.state === undefined || artifact.state === null ? undefined : toEnabled(artifact.state);
+  return { key: entryPointKey(artifact, type), type, label, meta, enabled, artifact };
+}

@@ -16,7 +16,7 @@
  * under the License.
  */
 
-import { Box, ColorSchemeImage, Divider, Grid, Link, Stack, Typography } from '@wso2/oxygen-ui';
+import { Box, ColorSchemeImage, Divider, Grid, Link, Stack } from '@wso2/oxygen-ui';
 import { type JSX } from 'react';
 import { Link as NavLink } from 'react-router';
 import LoginForm from '../components/LoginForm';
@@ -26,11 +26,11 @@ const Footer = () => (
   <Box component="footer" sx={{ mt: 4 }}>
     <Stack direction="row" justifyContent="center" spacing={1}>
       <Link component={NavLink} to={privacyPolicyUrl()} underline="hover" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-        Privacy Policy
+        Política de Privacidade
       </Link>
       <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
       <Link component={NavLink} to={cookiePolicyUrl()} underline="hover" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-        Cookie Policy
+        Política de Cookies
       </Link>
     </Stack>
   </Box>
@@ -47,51 +47,37 @@ export default function Login(): JSX.Element {
           sx={{
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'flex-start', // Move content to the left
+            alignItems: 'center',
             justifyContent: 'center',
             padding: { xs: 4, md: 8 },
             position: 'relative',
             overflow: 'hidden',
           }}>
-          <Stack direction="column" alignItems="flex-start" gap={3} display={{ xs: 'none', md: 'flex' }} sx={{ width: '100%' }}>
-            <ColorSchemeImage
-              src={{ light: `${base}assets/images/logo/WSO2-Integration-Platform-Black.svg`, dark: `${base}assets/images/logo/WSO2-Integration-Platform-White.svg` }}
-              alt={{ light: 'WSO2 Integration Platform Logo', dark: 'WSO2 Integration Platform Logo' }}
-              height={60}
-              width="auto"
-              style={{ alignSelf: 'flex-start' }}
-            />
-            <Typography variant="h3" component="h1" sx={{ textAlign: 'left', width: '100%' }}>
-              Get Started with WSO2 Integration Platform
-            </Typography>
-            <Box sx={{ maxWidth: 520, width: '100%' }}>
-              <Typography variant="body1" sx={{ color: 'text.secondary', textAlign: 'left', width: '100%' }}>
-                A centralized platform for controlling, managing, and observing your integration solutions with confidence and scale.
-              </Typography>
+          <Stack direction="column" alignItems="center" gap={3} display={{ xs: 'none', md: 'flex' }} sx={{ width: 'min(100%, 860px)' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', width: '100%', transform: { md: 'translate(-40px, -72px)', lg: 'translate(-72px, -72px)' } }}>
+              <ColorSchemeImage
+                src={{ light: `${base}assets/images/logo/WSO2-Integration-Platform-Black.svg`, dark: `${base}assets/images/logo/WSO2-Integration-Platform-White.svg` }}
+                alt={{ light: 'NEXDOM Integration Platform Logo', dark: 'NEXDOM Integration Platform Logo' }}
+                height={80}
+                width="auto"
+              />
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', width: '100%', transform: { md: 'translateX(112px)', lg: 'translateX(144px)' } }}>
+              <ColorSchemeImage
+                src={{
+                  light: `${base}assets/images/icp-login.svg`,
+                  dark: `${base}assets/images/icp-login-dark.svg`,
+                }}
+                alt={{
+                  light: 'ICP Login Illustration',
+                  dark: 'ICP Login Illustration',
+                }}
+                height={360}
+                width="auto"
+                style={{ maxWidth: '100%', maxHeight: '360px', objectFit: 'contain' }}
+              />
             </Box>
           </Stack>
-          <Box
-            sx={{
-              display: { xs: 'none', md: 'flex' },
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              mt: 2,
-              width: '100%',
-            }}>
-            <ColorSchemeImage
-              src={{
-                light: `${base}assets/images/icp-login.svg`,
-                dark: `${base}assets/images/icp-login-dark.svg`,
-              }}
-              alt={{
-                light: 'ICP Login Illustration',
-                dark: 'ICP Login Illustration',
-              }}
-              height={280}
-              width="auto"
-              style={{ maxWidth: '90%', maxHeight: '280px', objectFit: 'contain' }}
-            />
-          </Box>
         </Grid>
 
         <Grid
@@ -111,7 +97,7 @@ export default function Login(): JSX.Element {
             <Box sx={{ display: { xs: 'flex', md: 'none' }, justifyContent: 'center', mb: 3 }}>
               <ColorSchemeImage
                 src={{ light: `${base}assets/images/logo/WSO2-Integration-Platform-Black.svg`, dark: `${base}assets/images/logo/WSO2-Integration-Platform-White.svg` }}
-                alt={{ light: 'WSO2 Integration Platform Logo', dark: 'WSO2 Integration Platform Logo' }}
+                alt={{ light: 'NEXDOM Integration Platform Logo', dark: 'NEXDOM Integration Platform Logo' }}
                 height={48}
                 width="auto"
               />

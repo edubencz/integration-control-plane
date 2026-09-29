@@ -1,0 +1,148 @@
+.script-deploy:
+  before_script:
+    - apk add --no-cache bash coreutils gettext kubectl
+  script:
+    - |
+      set -eu
+
+      require_variable() {
+        variable_name="$1"
+        eval "variable_value=\${$variable_name:-}"
+        if [ -z "$variable_value" ]; then
+          echo "Variável obrigatória não definida: ${variable_name}"
+          exit 1
+        fi
+      }
+
+      toml_escape() {
+        printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+      }
+
+      reject_line_breaks() {
+        variable_name="$1"
+        eval "variable_value=\${$variable_name:-}"
+        sanitized_value=$(printf '%s' "$variable_value" | tr -d '\r\n')
+        if [ "$sanitized_value" != "$variable_value" ]; then
+          echo "${variable_name} não pode conter quebra de linha."
+          exit 1
+        fi
+      }
+
+      for variable_name in APP_NAME NAMESPACE TAG INGRESS_URL DB_HOST DB_PORT DB_NAME \
+        DB_USERNAME DB_PASSWORD ICP_ADMIN_PASSWORD FRONTEND_JWT_HMAC_SECRET \
+        USER_SERVICE_JWT_HMAC_SECRET OBSERVABILITY_JWT_HMAC_SECRET; do
+        require_variable "$variable_name"
+        reject_line_breaks "$variable_name"
+      done
+
+      case "$DB_PORT" in *[!0-9]*|'') echo "DB_PORT deve ser numérico."; exit 1 ;; esac
+      case "$DB_USE_TLS" in true|false) ;; *) echo "DB_USE_TLS deve ser true ou false."; exit 1 ;; esac
+      case "$INGRESS_URL" in http://*|https://*|*/*) echo "INGRESS_URL deve conter apenas o hostname."; exit 1 ;; esac
+      if [ "${#ICP_ADMIN_PASSWORD}" -lt 12 ]; then
+        echo "ICP_ADMIN_PASSWORD deve conter pelo menos 12 caracteres."
+        exit 1
+      fi
+      for secret_name in FRONTEND_JWT_HMAC_SECRET USER_SERVICE_JWT_HMAC_SECRET OBSERVABILITY_JWT_HMAC_SECRET; do
+        eval "secret_value=\${$secret_name}"
+        if [ "${#secret_value}" -lt 32 ]; then
+          echo "${secret_name} deve conter pelo menos 32 caracteres."
+          exit 1
+        fi
+      done
+
+      CREDENTIALS_DB_HOST=${CREDENTIALS_DB_HOST:-$DB_HOST}
+      CREDENTIALS_DB_PORT=${CREDENTIALS_DB_PORT:-$DB_PORT}
+      CREDENTIALS_DB_NAME=${CREDENTIALS_DB_NAME:-$DB_NAME}
+      CREDENTIALS_DB_USERNAME=${CREDENTIALS_DB_USERNAME:-$DB_USERNAME}
+      CREDENTIALS_DB_PASSWORD=${CREDENTIALS_DB_PASSWORD:-$DB_PASSWORD}
+      KEYSTORE_PASSWORD=${KEYSTORE_PASSWORD:-wso2carbon}
+      TRUSTSTORE_PASSWORD=${TRUSTSTORE_PASSWORD:-wso2carbon}
+      OPENSEARCH_URL=${OPENSEARCH_URL:-https://localhost:9200}
+      OPENSEARCH_USERNAME=${OPENSEARCH_USERNAME:-admin}
+      OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD:-Ballerina@123}
+      if [ "$DB_USE_TLS" = "true" ]; then DB_SSL_MODE=require; else DB_SSL_MODE=prefer; fi
+
+      export CREDENTIALS_DB_HOST CREDENTIALS_DB_PORT CREDENTIALS_DB_NAME
+      export CREDENTIALS_DB_USERNAME CREDENTIALS_DB_PASSWORD DB_SSL_MODE
+      export KEYSTORE_PASSWORD_TOML="$(toml_escape "$KEYSTORE_PASSWORD")"
+      export TRUSTSTORE_PASSWORD_TOML="$(toml_escape "$TRUSTSTORE_PASSWORD")"
+      export FRONTEND_JWT_HMAC_SECRET_TOML="$(toml_escape "$FRONTEND_JWT_HMAC_SECRET")"
+      export USER_SERVICE_JWT_HMAC_SECRET_TOML="$(toml_escape "$USER_SERVICE_JWT_HMAC_SECRET")"
+      export OBSERVABILITY_JWT_HMAC_SECRET_TOML="$(toml_escape "$OBSERVABILITY_JWT_HMAC_SECRET")"
+      export DB_HOST_TOML="$(toml_escape "$DB_HOST")"
+      export DB_NAME_TOML="$(toml_escape "$DB_NAME")"
+      export DB_USERNAME_TOML="$(toml_escape "$DB_USERNAME")"
+      export DB_PASSWORD_TOML="$(toml_escape "$DB_PASSWORD")"
+      export CREDENTIALS_DB_HOST_TOML="$(toml_escape "$CREDENTIALS_DB_HOST")"
+      export CREDENTIALS_DB_NAME_TOML="$(toml_escape "$CREDENTIALS_DB_NAME")"
+      export CREDENTIALS_DB_USERNAME_TOML="$(toml_escape "$CREDENTIALS_DB_USERNAME")"
+      export CREDENTIALS_DB_PASSWORD_TOML="$(toml_escape "$CREDENTIALS_DB_PASSWORD")"
+      export OPENSEARCH_URL_TOML="$(toml_escape "$OPENSEARCH_URL")"
+      export OPENSEARCH_USERNAME_TOML="$(toml_escape "$OPENSEARCH_USERNAME")"
+      export OPENSEARCH_PASSWORD_TOML="$(toml_escape "$OPENSEARCH_PASSWORD")"
+      export CONFIG_CHECKSUM="$(printf '%s\n' "$INGRESS_URL" "$DB_HOST" "$DB_PORT" "$DB_NAME" \
+        "$DB_USERNAME" "$DB_PASSWORD" "$FRONTEND_JWT_HMAC_SECRET" \
+        "$USER_SERVICE_JWT_HMAC_SECRET" "$OBSERVABILITY_JWT_HMAC_SECRET" \
+        "$OPENSEARCH_URL" "$OPENSEARCH_USERNAME" "$OPENSEARCH_PASSWORD" | sha256sum | awk '{print $1}')"
+
+      if [ -n "${KUBECONFIG_CONTENT_BASE64:-}" ]; then
+        mkdir -p "$HOME/.kube"
+        printf '%s' "$KUBECONFIG_CONTENT_BASE64" | base64 -d > "$HOME/.kube/config"
+        chmod 600 "$HOME/.kube/config"
+        export KUBECONFIG="$HOME/.kube/config"
+      fi
+      if [ -n "${CONTEXT:-}" ] && [ -n "$(kubectl config get-contexts "$CONTEXT" -o name 2>/dev/null || true)" ]; then
+        kubectl config use-context "$CONTEXT"
+      elif [ -n "${CONTEXT:-}" ]; then
+        echo "Context ${CONTEXT} não está no kubeconfig; usando a autenticação atual do runner."
+      fi
+
+      rm -rf "${DIR_K8S_RENDERED:?}"
+      mkdir -p "$DIR_K8S_RENDERED"
+      find .cicd/k8s -type f -name "*.yml" -exec sh -c \
+        'envsubst < "$1" > "$2/$(basename "$1")"' _ {} "$DIR_K8S_RENDERED" \;
+
+      kubectl create configmap "${APP_NAME}-db-scripts" -n "$NAMESPACE" \
+        --from-file=bootstrap.sh=.cicd/database/bootstrap.sh \
+        --from-file=hash_admin.bal=.cicd/database/hash_admin.bal \
+        --from-file=admin_credentials.sql=.cicd/database/admin_credentials.sql \
+        --from-file=admin_user.sql=.cicd/database/admin_user.sql \
+        --from-file=postgresql_init.sql=icp_server/resources/db/init-scripts/postgresql_init.sql \
+        --from-file=credentials_postgresql_init.sql=icp_server/resources/db/init-scripts/credentials_postgresql_init.sql \
+        --from-file=migration-01-audit.sql=icp_server/resources/db/migration-scripts/add_audit_log_ui_postgresql.sql \
+        --from-file=migration-02-deployments.sql=icp_server/resources/db/migration-scripts/add_mi_deployments_feature_postgresql.sql \
+        --from-file=migration-03-history.sql=icp_server/resources/db/migration-scripts/add_mi_deployment_history_postgresql.sql \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+      kubectl create secret generic "${APP_NAME}-bootstrap" -n "$NAMESPACE" \
+        --from-literal=DB_HOST="$DB_HOST" \
+        --from-literal=DB_PORT="$DB_PORT" \
+        --from-literal=DB_NAME="$DB_NAME" \
+        --from-literal=DB_USERNAME="$DB_USERNAME" \
+        --from-literal=DB_PASSWORD="$DB_PASSWORD" \
+        --from-literal=CREDENTIALS_DB_HOST="$CREDENTIALS_DB_HOST" \
+        --from-literal=CREDENTIALS_DB_PORT="$CREDENTIALS_DB_PORT" \
+        --from-literal=CREDENTIALS_DB_NAME="$CREDENTIALS_DB_NAME" \
+        --from-literal=CREDENTIALS_DB_USERNAME="$CREDENTIALS_DB_USERNAME" \
+        --from-literal=CREDENTIALS_DB_PASSWORD="$CREDENTIALS_DB_PASSWORD" \
+        --from-literal=DB_SSL_MODE="$DB_SSL_MODE" \
+        --from-literal=ICP_ADMIN_PASSWORD="$ICP_ADMIN_PASSWORD" \
+        --dry-run=client -o yaml | kubectl apply -f -
+
+      cleanup_bootstrap() {
+        kubectl delete job "${APP_NAME}-database-bootstrap" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+        kubectl delete secret "${APP_NAME}-bootstrap" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+        kubectl delete configmap "${APP_NAME}-db-scripts" -n "$NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+      }
+      trap cleanup_bootstrap EXIT
+
+      kubectl delete job "${APP_NAME}-database-bootstrap" -n "$NAMESPACE" --ignore-not-found
+      kubectl apply -f "$DIR_K8S_RENDERED/database-bootstrap-job.yml"
+      if ! kubectl wait --for=condition=complete --timeout=10m \
+        "job/${APP_NAME}-database-bootstrap" -n "$NAMESPACE"; then
+        kubectl logs "job/${APP_NAME}-database-bootstrap" -n "$NAMESPACE" --all-containers=true || true
+        exit 1
+      fi
+
+      kubectl kustomize "$DIR_K8S_RENDERED" | kubectl apply -f -
+      kubectl rollout status "deployment/${APP_NAME}" -n "$NAMESPACE" --timeout=10m

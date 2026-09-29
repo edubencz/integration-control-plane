@@ -26,6 +26,58 @@ import ballerina/http;
 import ballerina/lang.value;
 import ballerina/log;
 
+// Keep the GraphQL input distinct from the storage/domain type. The latter is
+// also exposed as an output type and cannot be reused as a GraphQL input.
+type EnvironmentCreateInput record {
+    string name;
+    string environmentHandler;
+    string description?;
+    boolean critical;
+    string createdBy?;
+};
+
+type ComponentCreateInput record {
+    string projectId;
+    string name;
+    string displayName?;
+    string description?;
+    int orgId?;
+    string orgHandler?;
+    types:RuntimeType? componentType?;
+    string technology?;
+    string displayType?;
+    string componentSubType?;
+    string repository?;
+    string branch?;
+    string directoryPath?;
+    string secretRef?;
+    boolean isPublicRepo?;
+    string createdBy?;
+};
+
+// Keep the component query inputs local to the GraphQL service. The domain
+// module also exposes records with these names, and reusing those records can
+// make the GraphQL compiler classify a nested input as an output type when a
+// clean build is performed. These definitions intentionally retain the public
+// GraphQL names while remaining input-only service types.
+type ComponentFilterInput record {|
+    boolean withSystemComponents?;
+    string displayType?;
+    string status?;
+    string componentSubType?;
+|};
+
+type ComponentSortInput record {|
+    string 'field;
+    string 'order;
+|};
+
+type ComponentOptionsInput record {|
+    ComponentFilterInput filter?;
+    ComponentSortInput sort?;
+    types:PaginationInput pagination?;
+|};
+
 // GraphQL listener configuration
 listener graphql:Listener graphqlListener = new (httpListener);
 
@@ -731,6 +783,24 @@ service /graphql on graphqlListener {
 
     function init() {
         log:printInfo("GraphQL service started at " + serverHost + ":" + serverPort.toString());
+    }
+
+    isolated resource function get auditLogs(graphql:Context context, string orgHandler, types:AuditLogFilter? filter, types:PaginationInput? pagination) returns types:AuditLogsPage|error {
+        types:UserContextV2 userContext = check extractUserContext(context);
+        if orgHandler != "default" {
+            return error("Organization not found");
+        }
+        types:AccessScope scope = auth:buildScopeFromContext("");
+        if !check auth:hasPermission(userContext.userId, auth:PERMISSION_AUDIT_VIEW, scope) {
+            return error("Insufficient permissions to view audit logs");
+        }
+        types:AuditLog[] allLogs = check storage:getAuditLogs(filter ?: {});
+        int requestedLimit = pagination?.'limit ?: 25;
+        int effectiveLimit = int:max(0, int:min(requestedLimit, 100));
+        int offset = int:max(0, pagination?.offset ?: 0);
+        int safeOffset = int:min(offset, allLogs.length());
+        int end = int:min(safeOffset + effectiveLimit, allLogs.length());
+        return {items: allLogs.slice(safeOffset, end), pageInfo: {total: allLogs.length(), 'limit: effectiveLimit, offset: safeOffset}};
     }
 
     // ----------- Runtime Resources
@@ -1669,7 +1739,8 @@ service /graphql on graphqlListener {
         }
         map<map<types:ArtifactStateField>> sm = check storage:queryArtifactState(componentId, environmentId);
         foreach types:Connector a in result {
-            types:ArtifactStateField? s = stateOf(sm, a.name, "connector", "status");
+            string qualName = types:qualifiedArtifactName(a.name, a.'package);
+            types:ArtifactStateField? s = stateOf(sm, qualName, "connector", "status");
             if s is types:ArtifactStateField {
                 a.state = <types:ArtifactState>s.value;
                 a.stateInSync = s.inSync;
@@ -1858,6 +1929,21 @@ service /graphql on graphqlListener {
         types:RegistryDirectoryResponse listing =
             check mi_management:registryDirectory(answer.body);
         return {...fetchableOf(answer), count: listing.count, items: listing.items};
+    }
+
+    isolated resource function get registryResourceSearch(graphql:Context context, string runtimeId, string path, string searchKey) returns types:RegistrySearchResponse|error {
+        types:UserContextV2 userContext = check extractUserContext(context);
+        string trimmedSearchKey = searchKey.trim();
+        if trimmedSearchKey == "" {
+            return error("Search key is required");
+        }
+        types:ValidatedRegistryAccess validated =
+            check validateRegistryResourceAccess(userContext, runtimeId, path, "registry resource search");
+        types:RegistryApiClient apiClient =
+            check mi_management:createRegistryManagementClient(validated.runtime, runtimeId,
+                artifactsApiAllowInsecureTLS);
+        return check mi_management:fetchRegistryResourceSearch(apiClient.mgmtClient, apiClient.hmacToken,
+            validated.trimmedPath, trimmedSearchKey);
     }
 
     isolated resource function get registryFileContent(graphql:Context context, string runtimeId, string path) returns types:FetchableText|error {
@@ -2086,7 +2172,7 @@ service /graphql on graphqlListener {
 
     // ----------- Environment Resources
     // Create a new environment (super admin only)
-    isolated remote function createEnvironment(graphql:Context context, types:EnvironmentInput environment) returns types:Environment|error? {
+    isolated remote function createEnvironment(graphql:Context context, EnvironmentCreateInput environment) returns types:Environment|error? {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         // Build org-level scope for permission check
@@ -2109,7 +2195,14 @@ service /graphql on graphqlListener {
         environment.createdBy = userContext.userId;
 
         // Call storage layer to insert environments
-        types:Environment? created = check storage:createEnvironment(environment);
+        types:EnvironmentInput storageInput = {
+            name: environment.name,
+            environmentHandler: environment.environmentHandler,
+            description: environment.description,
+            critical: environment.critical,
+            createdBy: environment.createdBy
+        };
+        types:Environment? created = check storage:createEnvironment(storageInput);
         if created is types:Environment {
             storage:logAuditEvent(storage:AUDIT_ENVIRONMENT_CREATE, userId = userContext.userId,
                     resourceType = storage:AUDIT_RESOURCE_ENVIRONMENT, resourceId = created.id,
@@ -2513,7 +2606,7 @@ service /graphql on graphqlListener {
 
     // ----------- Component Resources
     // Create a new component
-    isolated remote function createComponent(graphql:Context context, types:ComponentInput component) returns types:Component|error? {
+    isolated remote function createComponent(graphql:Context context, ComponentCreateInput component) returns types:Component|error? {
         types:UserContextV2 userContext = check extractUserContext(context);
 
         // Build scope at project level (creating integration in a project)
@@ -2542,7 +2635,15 @@ service /graphql on graphqlListener {
         // Set the createdBy field to the current user's ID
         component.createdBy = userContext.userId;
 
-        types:Component|error? result = storage:createComponent(component);
+        types:ComponentInput componentInput = {
+            projectId: component.projectId, name: component.name, displayName: component.displayName,
+            description: component.description, orgId: component.orgId, orgHandler: component.orgHandler,
+            componentType: component?.componentType, technology: component?.technology, displayType: component?.displayType,
+            componentSubType: component?.componentSubType, repository: component?.repository, branch: component?.branch,
+            directoryPath: component?.directoryPath, secretRef: component?.secretRef, isPublicRepo: component?.isPublicRepo,
+            createdBy: component.createdBy
+        };
+        types:Component|error? result = storage:createComponent(componentInput);
         if result is error {
             string errMsg = result.message();
             if errMsg.includes("Unique index") || errMsg.includes("unique index") || errMsg.includes("23505") {
@@ -3489,6 +3590,58 @@ service /graphql on graphqlListener {
             : {...fetchableOf(answer), content: check mi_management:artifactSource(answer.body)};
     }
 
+    // Fetch live MI API metadata, OpenAPI and Synapse configuration for expandable Entry Point
+    // operations. This is intentionally read-only and supports users with view permission.
+    isolated resource function get miApiDetailsByComponent(
+            graphql:Context context,
+            string componentId,
+            string apiName,
+            string environmentId,
+            string? runtimeId = ()
+    ) returns types:MiApiDetails|error {
+        types:UserContextV2 userContext = check extractUserContext(context);
+        types:Component? component = check storage:getComponentById(componentId);
+        if component is () {
+            return error("Integration not found");
+        }
+        types:AccessScope scope = auth:buildScopeFromContext(component.projectId, integrationId = componentId,
+            envId = environmentId);
+        if !check auth:hasAnyPermission(userContext.userId,
+                [auth:PERMISSION_INTEGRATION_VIEW, auth:PERMISSION_INTEGRATION_EDIT,
+                auth:PERMISSION_INTEGRATION_MANAGE], scope) {
+            return error("Insufficient permissions to view component artifacts");
+        }
+
+        types:Runtime[] runtimes = check storage:getRuntimes("RUNNING", "MI", environmentId,
+            component.projectId, componentId);
+        types:Runtime runtime = check utils:selectRuntime(runtimes, componentId, environmentId, runtimeId);
+        string baseUrl = check storage:buildManagementBaseUrl(runtime.managementHostname,
+            runtime.managementPort);
+        http:Client|error clientResult = artifactsApiAllowInsecureTLS
+            ? new (baseUrl, {secureSocket: {enable: false}})
+            : new (baseUrl);
+        if clientResult is error {
+            return error(string `Failed to create management API client: ${clientResult.message()}`);
+        }
+        string token = check storage:issueRuntimeHmacToken(runtime.runtimeId);
+        types:MgmtRestApiInfo apiInfo = check mi_management:fetchApiArtifact(clientResult, token, apiName);
+        string? swagger = ();
+        string|error swaggerResult = mi_management:fetchApiSwagger(runtime, componentId, environmentId,
+            apiInfo, artifactsApiAllowInsecureTLS);
+        if swaggerResult is string {
+            swagger = swaggerResult;
+        } else {
+            log:printDebug("OpenAPI document unavailable; returning MI metadata and configuration",
+                runtimeId = runtime.runtimeId, apiName = apiName, errorMessage = swaggerResult.message());
+        }
+        return {
+            runtimeId: runtime.runtimeId,
+            metadata: apiInfo.toJson().toJsonString(),
+            openApi: swagger,
+            configuration: apiInfo.configuration ?: ()
+        };
+    }
+
     // Get WSDL for any supported artifact by type and name via ICP internal API
     // Currently only supported for proxy services, but can be extended to other artifact types in the future if needed (e.g. APIs with OAS)
     isolated resource function get artifactWsdlByComponent(
@@ -3820,4 +3973,3 @@ service /graphql on graphqlListener {
     }
 
 }
-

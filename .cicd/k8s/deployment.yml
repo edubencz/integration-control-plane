@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${APP_NAME}
+spec:
+  replicas: ${VAR_REPLICAS}
+  revisionHistoryLimit: 5
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: ${APP_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}
+        stack: ballerina
+      annotations:
+        checksum/config: "${CONFIG_CHECKSUM}"
+    spec:
+      terminationGracePeriodSeconds: ${VAR_TERMINATION_GRACE_PERIOD_SECONDS}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: ${APP_NAME}
+          image: ${DOCKER_REPO}/${APP_NAME}:${TAG}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              memory: 1024Mi
+            limits:
+              memory: 2048Mi
+          ports:
+            - name: https
+              protocol: TCP
+              containerPort: 9446
+            - name: runtime-https
+              protocol: TCP
+              containerPort: 9445
+            - name: observability
+              protocol: TCP
+              containerPort: 9449
+          envFrom:
+            - configMapRef:
+                name: ${APP_NAME}
+          volumeMounts:
+            - name: application-config
+              mountPath: /home/wso2/wso2-integration-control-plane-${ICP_VERSION}/conf/deployment.toml
+              subPath: deployment.toml
+              readOnly: true
+          startupProbe:
+            tcpSocket:
+              port: https
+            failureThreshold: 30
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: https
+            failureThreshold: 3
+            periodSeconds: 20
+          readinessProbe:
+            tcpSocket:
+              port: https
+            failureThreshold: 3
+            periodSeconds: 10
+      volumes:
+        - name: application-config
+          secret:
+            secretName: ${APP_NAME}-config

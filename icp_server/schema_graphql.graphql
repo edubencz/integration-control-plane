@@ -1,4 +1,5 @@
 type Query {
+  auditLogs(orgHandler: String!, filter: AuditLogFilter, pagination: PaginationInput): AuditLogsPage!
   runtimes(status: String, runtimeType: String, environmentId: String, projectId: String, componentId: String, pagination: PaginationInput): RuntimesPage!
   runtime(runtimeId: String!): Runtime
   componentDeployment(orgHandler: String!, orgUuid: String!, componentId: String!, versionId: String!, environmentId: String!): ComponentDeployment
@@ -31,6 +32,7 @@ type Query {
   logFilesByRuntime(runtimeId: String!, searchKey: String, pagination: PaginationInput): LogFilesResponse!
   logFileContent(runtimeId: String!, fileName: String!): FetchableText!
   registryDirectory(runtimeId: String!, path: String!, expand: Boolean): RegistryDirectoryResponse!
+  registryResourceSearch(runtimeId: String!, path: String!, searchKey: String!): RegistrySearchResponse!
   registryFileContent(runtimeId: String!, path: String!): FetchableText!
   registryResourceMetadata(runtimeId: String!, path: String!): RegistryResourceMetadata!
   registryResourceProperties(runtimeId: String!, path: String!): RegistryPropertiesResponse!
@@ -53,6 +55,7 @@ type Query {
   componentSecrets(componentId: String!, environmentId: String!, pagination: PaginationInput): BoundSecretsPage!
   componentArtifactTypes(componentId: String!, environmentId: String): [ArtifactTypeCount!]!
   artifactSourceByComponent(componentId: String!, artifactType: String!, artifactName: String!, environmentId: String, runtimeId: String, packageName: String, templateType: String): FetchableText!
+  miApiDetailsByComponent(componentId: String!, apiName: String!, environmentId: String!, runtimeId: String): MiApiDetails!
   artifactWsdlByComponent(componentId: String!, artifactType: String!, artifactName: String!, environmentId: String, runtimeId: String, packageName: String): FetchableText!
   localEntryValueByComponent(componentId: String!, entryName: String!, environmentId: String, runtimeId: String): FetchableText!
   artifactParametersByComponent(componentId: String!, artifactType: String!, artifactName: String!, environmentId: String, runtimeId: String, packageName: String): FetchableParameters!
@@ -63,6 +66,46 @@ type Query {
   getMIUsers(componentId: String!, runtimeId: String!, pagination: PaginationInput): MIUsersPage!
   systemInfo: SystemInfo!
   observabilityMetricsConfig: ObservabilityMetricsConfigStatus!
+}
+
+type AuditLogsPage {
+  items: [AuditLog!]!
+  pageInfo: PageInfo!
+}
+
+type AuditLog {
+  id: Int!
+  actorUserId: String
+  actorUsername: String
+  action: String!
+  eventSource: String!
+  resourceType: String
+  resourceId: String
+  details: String
+  clientIp: String
+  userAgent: String
+  timestamp: String!
+}
+
+type PageInfo {
+  total: Int!
+  limit: Int!
+  offset: Int!
+}
+
+input AuditLogFilter {
+  actions: [String!]
+  resourceTypes: [String!]
+  actor: String
+  search: String
+  startTime: String
+  endTime: String
+}
+
+input PaginationInput {
+  limit: Int
+  offset: Int
+  cursor: String
 }
 
 type RuntimesPage {
@@ -667,18 +710,6 @@ type OpenApiDefinitionRecord {
   definition: String!
 }
 
-type PageInfo {
-  total: Int!
-  limit: Int!
-  offset: Int!
-}
-
-input PaginationInput {
-  limit: Int
-  offset: Int
-  cursor: String
-}
-
 type ComponentDeployment {
   environmentId: String!
   configCount: Int!
@@ -951,6 +982,18 @@ type RegistryProperty {
   value: String!
 }
 
+type RegistrySearchResponse {
+  count: Int!
+  items: [RegistrySearchItem!]!
+}
+
+type RegistrySearchItem {
+  name: String!
+  path: String!
+  mediaType: String!
+  isDirectory: Boolean!
+}
+
 type RegistryResourceMetadata {
   name: String!
   mediaType: String!
@@ -972,14 +1015,14 @@ type Mutation {
   updateListenerState(input: ListenerControlInput!): ListenerControlResponse!
   deleteLogger(input: DeleteLoggerInput!): DeleteLoggerResponse!
   updateLogLevel(input: UpdateLogLevelInput!): UpdateLogLevelResponse!
-  createEnvironment(environment: EnvironmentInput!): Environment
+  createEnvironment(environment: EnvironmentCreateInput!): Environment
   deleteEnvironment(environmentId: String!): Boolean!
   updateEnvironment(environmentId: String!, name: String, handler: String, description: String, critical: Boolean): Environment
   updateEnvironmentProductionStatus(environmentId: String!, isProduction: Boolean!): Environment
   createProject(project: ProjectInput!): Project
   deleteProject(orgId: Int!, projectId: String!): DeleteResponse!
   updateProject(project: ProjectUpdateInput!): Project!
-  createComponent(component: ComponentInput!): Component
+  createComponent(component: ComponentCreateInput!): Component
   createMoesifDashboards(componentId: String!, environmentId: String!, managementApiKey: String!): MoesifMetricsConfigStatus!
   createMoesifLogsDashboards(componentId: String!, environmentId: String!, managementApiKey: String!): MoesifLogsConfigStatus!
   deleteComponentV2(orgHandler: String!, componentId: String!, projectId: String!): DeleteComponentV2Response!
@@ -1056,7 +1099,7 @@ input UpdateLogLevelInput {
   requestId: String
 }
 
-input EnvironmentInput {
+input EnvironmentCreateInput {
   name: String!
   environmentHandler: String!
   description: String
@@ -1120,7 +1163,7 @@ input ProjectUpdateInput {
   description: String
 }
 
-input ComponentInput {
+input ComponentCreateInput {
   projectId: String!
   name: String!
   displayName: String
@@ -1325,6 +1368,13 @@ enum ArtifactType {
   RESTAPI
   LISTENER
   SERVICE
+}
+
+type MiApiDetails {
+  runtimeId: String!
+  metadata: String!
+  openApi: String
+  configuration: String
 }
 
 "A management answer projected into name/value pairs: artifact parameters and overviews."

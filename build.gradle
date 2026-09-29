@@ -25,6 +25,9 @@ import javax.inject.Inject
 import org.gradle.process.ExecOperations
 
 def logger = Logger.getLogger('ICPBuild')
+def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+def balCommand = isWindows ? 'bal.bat' : 'bal'
+def pnpmCommand = isWindows ? 'pnpm.cmd' : 'pnpm'
 
 // Gradle 9 removed Project.exec(). ExecOperations is the supported replacement, and it is only
 // available by injection, so a throwaway interface carries it into the script's task actions.
@@ -63,9 +66,7 @@ task cleanICP {
     description = 'Clean build artifacts'
     doLast {
         logger.info('Cleaning Integration Control Plane...')
-        execOps.exec {
-            commandLine 'rm', '-rf', 'icp_server/target'
-        }
+        delete file('icp_server/target')
         logger.info('Clean complete')
     }
 }
@@ -77,7 +78,7 @@ task buildICP {
         logger.info('Building Integration Control Plane...')
         execOps.exec {
             workingDir 'icp_server'
-            commandLine 'bal', 'build'
+            commandLine balCommand, 'build'
         }
         logger.info('Build complete')
     }
@@ -93,7 +94,7 @@ task run {
         logger.info('Starting ICP Server...')
         execOps.exec {
             workingDir 'icp_server'
-            commandLine 'bal', 'run'
+            commandLine balCommand, 'run'
         }
     }
 }
@@ -109,7 +110,7 @@ task testICP {
         execOps.exec {
             workingDir 'icp_server'
             // -PnoCoverage speeds up local iterations; the combined coverage report then self-skips.
-            commandLine(['bal', 'test'] + (project.hasProperty('noCoverage') ? [] : ['--code-coverage']))
+            commandLine(([balCommand, 'test'] + (project.hasProperty('noCoverage') ? [] : ['--code-coverage'])) as String[])
         }
         logger.info('Tests complete')
     }
@@ -147,11 +148,11 @@ task buildFrontend {
         logger.info('Building frontend...')
         execOps.exec {
             workingDir 'frontend'
-            commandLine 'pnpm', 'install'
+            commandLine pnpmCommand, 'install'
         }
         execOps.exec {
             workingDir 'frontend'
-            commandLine 'pnpm', 'build'
+            commandLine pnpmCommand, 'build'
         }
         logger.info('Frontend build complete')
     }
@@ -190,7 +191,13 @@ task copyFrontendDist {
 
 task packageICP {
     description = 'Package the ICP executable JAR into a zip file'
-    dependsOn buildICP, copyFrontendDist
+    dependsOn copyFrontendDist
+    // The Docker build consumes the JAR produced by the CI build job. This
+    // avoids resolving the Ballerina Central dependencies a second time from
+    // the Docker-in-Docker runner. Local builds retain the normal dependency.
+    if (!project.hasProperty('skipBuildICP')) {
+        dependsOn buildICP
+    }
     doLast {
         logger.info('Packaging Integration Control Plane...')
         
@@ -306,8 +313,10 @@ task packageICP {
                 }
 
                 // Normalize line endings to LF and make shell scripts executable
-                fileTree(tempBinDir) { include '*.sh' }.each { f ->
-                    new ProcessBuilder('chmod', '+x', f.absolutePath).start().waitFor()
+                if (!isWindows) {
+                    fileTree(tempBinDir) { include '*.sh' }.each { f ->
+                        f.setExecutable(true)
+                    }
                 }
             } else {
                 logger.warning("Scripts directory not found at ${scriptsDir.absolutePath}")
@@ -391,22 +400,15 @@ task packageICP {
             
             // Create the zip file
             logger.info("Creating zip file: ${zipFile.absolutePath}")
-            // `zip -r` UPDATES an existing archive, so every build's hashed bundles pile up in
-            // the distribution forever — and a consumer can end up serving whichever index.html
-            // survived. The archive is rebuilt from scratch, never appended.
-            delete zipFile
-            execOps.exec {
-                workingDir 'build/temp-package'
-                commandLine 'zip', '-r', zipFile.absolutePath, '.'
-            }
+            ant.zip(destfile: zipFile, basedir: tempDir)
             
             // Clean up temp directory
             delete tempDir
-            
+
             logger.info("Package created: ${zipFile.absolutePath}")
             logger.info("Archive contents:")
-            execOps.exec {
-                commandLine 'unzip', '-l', zipFile.absolutePath
+            new java.util.zip.ZipFile(zipFile).withCloseable { archive ->
+                archive.entries().each { entry -> logger.info("  ${entry.name}") }
             }
         } else {
             logger.severe("ERROR: JAR file not found at ${jarFile.absolutePath}")

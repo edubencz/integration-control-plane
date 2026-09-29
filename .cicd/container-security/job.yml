@@ -1,0 +1,21 @@
+include:
+  - template: Jobs/Container-Scanning.gitlab-ci.yml
+
+container_scanning:
+  stage: container-security
+  variables:
+    SECURE_LOG_LEVEL: debug
+    CS_REGISTRY_USER: $CI_REGISTRY_USER
+    CS_REGISTRY_PASSWORD: $CI_JOB_TOKEN
+  before_script:
+    - |
+      if [ -n "${CI_COMMIT_TAG:-}" ]; then
+        export TAG=$CI_COMMIT_TAG
+      else
+        export TAG=$CI_COMMIT_SHA
+      fi
+      export CS_IMAGE=${CI_REGISTRY_IMAGE}:${TAG}
+      echo "# - CS_IMAGE             : ${CS_IMAGE}"
+      echo "# - CI_REGISTRY_USER     : ${CI_REGISTRY_USER}"
+  extends:
+    - .rules-security

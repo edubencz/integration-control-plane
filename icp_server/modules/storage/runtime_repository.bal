@@ -433,13 +433,135 @@ public isolated function getTryItTarget(string componentId, string environmentId
             AND r.environment_id = ${environmentId} AND r.status = 'RUNNING'
             AND l.listener_port = ${port}`, usableTryItHostPredicate());
     stream<record {|string host; string protocol;|}, sql:Error?> rs = dbClient->query(query);
-    record {|string host; string protocol;|}[] rows = check from var r in rs
-        limit 1
-        select r;
-    if rows.length() == 0 {
+    record {|record {|string host; string protocol;|} value;|}|sql:Error? row = rs.next();
+    error? closeError = rs.close();
+    if row is sql:Error {
+        return row;
+    }
+    check closeError;
+    if row is () {
         return ();
     }
-    return {host: rows[0].host, protocol: rows[0].protocol};
+    return {host: row.value.host, protocol: row.value.protocol};
+}
+
+// Resolves an MI API target from ICP-owned runtime/artifact records. The host is
+// always the registered runtime hostname; the API URL contributes only scheme
+// and port, so a browser cannot redirect the proxy to an arbitrary destination.
+public isolated function getMiTryItTarget(string componentId, string environmentId, string runtimeId,
+        string apiName) returns types:MiTryItTarget?|error {
+    stream<record {|string? host; string api_url; string? context;|}, sql:Error?> rs = dbClient->query(`
+        SELECT r.runtime_hostname AS host, a.url AS api_url, a.context AS context
+        FROM runtimes r
+        JOIN mi_api_artifacts a ON a.runtime_id = r.runtime_id
+        WHERE r.runtime_id = ${runtimeId} AND r.component_id = ${componentId}
+            AND r.environment_id = ${environmentId} AND r.runtime_type = 'MI'
+            AND r.status = 'RUNNING' AND a.api_name = ${apiName}
+    `);
+    record {|record {|string? host; string api_url; string? context;|} value;|}|sql:Error? row = rs.next();
+    error? closeError = rs.close();
+    if row is sql:Error {
+        return row;
+    }
+    check closeError;
+    if row is () || row.value.host is () {
+        return ();
+    }
+    string apiUrl = row.value.api_url;
+    int? schemeEnd = apiUrl.indexOf("://");
+    if schemeEnd is () {
+        return error("Invalid MI API URL");
+    }
+    string protocol = apiUrl.substring(0, schemeEnd).toLowerAscii();
+    if protocol != "http" && protocol != "https" {
+        return error("Unsupported MI API URL scheme");
+    }
+    int? pathStart = apiUrl.indexOf("/", schemeEnd + 3);
+    if pathStart is () {
+        return error("Invalid MI API URL (missing path)");
+    }
+    string authority = apiUrl.substring(schemeEnd + 3, pathStart);
+    int? separator = authority.lastIndexOf(":");
+    string portText = separator is int ? authority.substring(separator + 1) : "";
+    int port = portText == "" ? (protocol == "https" ? 443 : 80) : check int:fromString(portText);
+    if port < 1 || port > 65535 {
+        return error("Invalid MI API listener port");
+    }
+    string context = row.value.context ?: apiUrl.substring(pathStart);
+    return {host: row.value.host ?: "", protocol, port, context};
+}
+
+// Validates that an inbound endpoint exists and is registered to a specific runtime. Returns the
+// runtime's hostname if valid, for use in constructing the target URL. Used for ownership checks
+// when resolving MCP server targets. Returns null if the inbound doesn't exist for that runtime.
+public isolated function getMiInboundForTryIt(string componentId, string environmentId, string runtimeId, string inboundName)
+        returns string?|error {
+    stream<record {|string? host;|}, sql:Error?> rs = dbClient->query(`
+        SELECT r.runtime_hostname AS host
+        FROM runtimes r
+        JOIN mi_inbound_endpoint_artifacts i ON i.runtime_id = r.runtime_id
+        WHERE r.runtime_id = ${runtimeId} AND r.component_id = ${componentId}
+            AND r.environment_id = ${environmentId} AND r.runtime_type = 'MI'
+            AND r.status = 'RUNNING' AND i.inbound_name = ${inboundName}
+    `);
+    record {|record {|string? host;|} value;|}|sql:Error? row = rs.next();
+    error? closeError = rs.close();
+    if row is sql:Error {
+        return row;
+    }
+    check closeError;
+    if row is () {
+        return ();
+    }
+    return row.value.host;
+}
+
+// Parses an MCP inbound's Synapse XML source to extract the listening port and context path.
+// Mirrors the TypeScript parseInboundNetworkConfig from parseMcpTools.ts.
+// Looks for <parameter name="inbound.http.port">8300</parameter> and
+// <parameter name="inbound.http.context">/mcp</parameter>, with fallback to inbound.mcp.port.
+// Returns a record with port/context fields, or null if parsing fails.
+public isolated function parseMcpInboundNetworkConfig(string xmlContent) returns record {|string? port; string? context;|}|() {
+    do {
+        xml doc = check xml:fromString(xmlContent);
+        map<string> paramMap = collectXmlParameterElements(doc);
+
+        string? port = paramMap["inbound.http.port"] ?: paramMap["inbound.mcp.port"];
+        string? context = paramMap["inbound.http.context"];
+
+        if port is string || context is string {
+            return {port, context};
+        }
+        return ();
+    } on fail {
+        return ();
+    }
+}
+
+// Strips any XML namespace URI from an expanded element name, e.g. "{http://ns}parameter" -> "parameter".
+isolated function xmlLocalName(string expandedName) returns string {
+    int? closeBrace = expandedName.lastIndexOf("}");
+    return closeBrace is int ? expandedName.substring(closeBrace + 1) : expandedName;
+}
+
+// Recursively collects every descendant <parameter name="...">value</parameter> element (at any
+// nesting depth, matched by local name so a namespaced source XML still parses) into a flat map.
+isolated function collectXmlParameterElements(xml node) returns map<string> {
+    map<string> result = {};
+    foreach xml:Element elem in node.elements() {
+        if xmlLocalName(elem.getName()) == "parameter" {
+            map<string> attrs = elem.getAttributes();
+            string? name = attrs["name"];
+            string value = elem.data();
+            if name is string && value.length() > 0 {
+                result[name] = value;
+            }
+        }
+        foreach [string, string] [k, v] in collectXmlParameterElements(elem.getChildren()).entries() {
+            result[k] = v;
+        }
+    }
+    return result;
 }
 
 // Base URLs (scheme://host:port) of RUNNING runtimes' registered listeners with a usable
@@ -455,7 +577,47 @@ public isolated function getLiveTryItBaseUrls() returns string[]|error {
     stream<record {|string host; int port; string protocol;|}, sql:Error?> rs = dbClient->query(query);
     record {|string host; int port; string protocol;|}[] rows = check from var r in rs
         select r;
-    return rows.map(r => tryitScheme(r.protocol) + "://" + r.host + ":" + r.port.toString());
+    string[] liveUrls = rows.map(r => tryitScheme(r.protocol) + "://" + r.host + ":" + r.port.toString());
+
+    // MI listeners are represented by the URL on each API artifact rather than
+    // by bi_runtime_listener_artifacts. Include both the preferred ingress-style
+    // HTTPS base and the advertised listener fallback so the proxy client cache
+    // is pruned consistently for both runtime types.
+    stream<record {|string? host; string api_url;|}, sql:Error?> miRs = dbClient->query(`
+        SELECT DISTINCT r.runtime_hostname AS host, a.url AS api_url
+        FROM runtimes r
+        JOIN mi_api_artifacts a ON a.runtime_id = r.runtime_id
+        WHERE r.runtime_type = 'MI' AND r.status = 'RUNNING'
+    `);
+    record {|string? host; string api_url;|}[] miRows = check from var r in miRs
+        select r;
+    foreach var row in miRows {
+        if row.host is () {
+            continue;
+        }
+        liveUrls.push("https://" + (row.host ?: ""));
+        int? schemeEnd = row.api_url.indexOf("://");
+        if schemeEnd is () {
+            continue;
+        }
+        string protocol = row.api_url.substring(0, schemeEnd).toLowerAscii();
+        if protocol != "http" && protocol != "https" {
+            continue;
+        }
+        int? pathStart = row.api_url.indexOf("/", schemeEnd + 3);
+        if pathStart is () {
+            continue;
+        }
+        string authority = row.api_url.substring(schemeEnd + 3, pathStart);
+        int? separator = authority.lastIndexOf(":");
+        string portText = separator is int ? authority.substring(separator + 1) : "";
+        int port = portText == "" ? (protocol == "https" ? 443 : 80) : check int:fromString(portText);
+        if port >= 1 && port <= 65535 {
+            string host = row.host ?: "";
+            liveUrls.push(protocol + "://" + host + ":" + port.toString());
+        }
+    }
+    return liveUrls;
 }
 
 type ApiRecordInDB record {|

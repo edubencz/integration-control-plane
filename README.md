@@ -2,6 +2,8 @@
 
 Monitor, troubleshoot, and control integration deployments with a modern GraphQL API and real-time observability.
 
+For the Nexdom customization and deployment guide, see [NEXDOM.md](docs/NEXDOM.md).
+
 ## Architecture
 
 The Integration Control Plane consists of:

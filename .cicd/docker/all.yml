@@ -1,0 +1,4 @@
+include:
+  - local: .cicd/docker/job.yml
+  - local: .cicd/docker/script.yml
+  - local: .cicd/docker/rules.yml

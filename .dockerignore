@@ -1,32 +1,21 @@
-# Keep the build context to sources. The image builds everything itself — the frontend in
-# stage 1, the Ballerina distribution in stage 2 — so shipping host build output costs
-# transfer time on every build and risks the image picking up a stale artifact.
-#
-# Before this file the context was ~1GB and took ~30s to transfer per build.
-
 .git
-.gitignore
-
-# Gradle and Ballerina output, rebuilt inside the image
-build/
-**/build/
-**/target/
-.gradle/
-**/.gradle/
-
-# Frontend: stage 1 runs the real build from frontend/ sources
-**/node_modules/
-frontend/dist/
-
-# Local H2 database files and runtime state — a container gets its own
-icp_server/database/
-**/*.mv.db
-**/*.trace.db
-logs/
-**/logs/
-*.pid
-
-# Local editor and OS noise
-.idea/
-.vscode/
-**/.DS_Store
+.gitlab-ci.yml
+.cicd
+.gradle
+**/.gradle
+**/build
+**/target
+!icp_server/target/
+icp_server/target/*
+!icp_server/target/bin/
+!icp_server/target/bin/icp_server.jar
+**/node_modules
+frontend/dist
+frontend/.vite
+icp_server/database
+e2e-tests
+logs
+**/*.log
+.vscode
+.idea
+.serena

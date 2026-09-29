@@ -8,6 +8,45 @@ export interface GqlPageInfo {
   offset: number;
 }
 
+export interface GqlAuditLog {
+  id: number;
+  actorUserId?: string | null;
+  actorUsername?: string | null;
+  action: string;
+  eventSource: string;
+  resourceType?: string | null;
+  resourceId?: string | null;
+  details?: string | null;
+  clientIp?: string | null;
+  userAgent?: string | null;
+  timestamp: string;
+}
+
+export interface AuditLogFilter {
+  actions?: string[];
+  resourceTypes?: string[];
+  actor?: string;
+  search?: string;
+  startTime?: string;
+  endTime?: string;
+}
+
+const AUDIT_LOGS_QUERY = `
+  query GetAuditLogs($orgHandler: String!, $filter: AuditLogFilter, $pagination: PaginationInput) {
+    auditLogs(orgHandler: $orgHandler, filter: $filter, pagination: $pagination) {
+      items { id, actorUserId, actorUsername, action, eventSource, resourceType, resourceId, details, clientIp, userAgent, timestamp }
+      pageInfo { total, limit, offset }
+    }
+  }`;
+
+export function useAuditLogs(orgHandler: string, filter: AuditLogFilter, limit: number, offset: number) {
+  return useQuery({
+    queryKey: ['auditLogs', orgHandler, filter, limit, offset],
+    queryFn: () => gql<{ auditLogs: { items: GqlAuditLog[]; pageInfo: GqlPageInfo } }>(AUDIT_LOGS_QUERY, { orgHandler, filter, pagination: { limit, offset } }).then((d) => d.auditLogs),
+    enabled: !!orgHandler,
+  });
+}
+
 export interface GqlProject {
   id: string;
   orgId: number;
@@ -569,6 +608,13 @@ export interface GqlArtifact {
   [key: string]: unknown;
 }
 
+export interface GqlMiApiDetails {
+  runtimeId: string;
+  metadata: string;
+  openApi: string | null;
+  configuration: string | null;
+}
+
 // Maps artifactType to its GraphQL query field name and useful display fields
 // `fields` = flat scalar fields, `gqlFields` = full GraphQL selection (including nested)
 // fields = card columns, gqlFields = full GraphQL selection (including nested)
@@ -759,6 +805,28 @@ export function useArtifactSource(envId: string, componentId: string, artifactTy
     }),
     (d) => d.content,
   );
+}
+
+const MI_API_DETAILS_QUERY = `
+  query MiApiDetails($componentId: String!, $apiName: String!, $environmentId: String!, $runtimeId: String) {
+    miApiDetailsByComponent(componentId: $componentId, apiName: $apiName, environmentId: $environmentId, runtimeId: $runtimeId) {
+      runtimeId, metadata, openApi, configuration
+    }
+  }`;
+
+export function useMiApiDetails(componentId: string, environmentId: string, apiName: string, runtimeId?: string) {
+  return useQuery({
+    queryKey: ['miApiDetails', componentId, environmentId, apiName, runtimeId],
+    queryFn: () =>
+      gql<{ miApiDetailsByComponent: GqlMiApiDetails }>(MI_API_DETAILS_QUERY, {
+        componentId,
+        environmentId,
+        apiName,
+        runtimeId: runtimeId || undefined,
+      }).then((d) => d.miApiDetailsByComponent),
+    enabled: !!componentId && !!environmentId && !!apiName && !!runtimeId,
+    staleTime: 5 * 60 * 1000,
+  });
 }
 
 const LOCAL_ENTRY_VALUE_QUERY = `
@@ -1088,6 +1156,10 @@ export function useLogFileContent(runtimeId: string, fileName: string, enabled =
   );
 }
 
+export function fetchLogFileContent(runtimeId: string, fileName: string): Promise<string> {
+  return gql<{ logFileContent: string }>(LOG_FILE_CONTENT_QUERY, { runtimeId, fileName }).then((d) => d.logFileContent);
+}
+
 // ── OpenAPI Definitions ──
 // Packed by the swagger-pack compiler plugin (icp-runtime-bridge) and reported via the full
 // heartbeat; only BI runtimes with remoteManagement=true and at least one HTTP service have any.
@@ -1128,6 +1200,8 @@ export interface GqlRegistryDirectoryItem {
   mediaType: string;
   isDirectory: boolean;
   properties: GqlRegistryProperty[];
+  /** Present for search results; direct directory listings derive it from the current path. */
+  path?: string;
 }
 
 export interface GqlRegistryDirectoryResponse {
@@ -1143,6 +1217,18 @@ export interface GqlRegistryResourceMetadata {
 export interface GqlRegistryPropertiesResponse {
   count: number;
   properties: GqlRegistryProperty[];
+}
+
+export interface GqlRegistrySearchItem {
+  name: string;
+  path: string;
+  mediaType: string;
+  isDirectory: boolean;
+}
+
+export interface GqlRegistrySearchResponse {
+  count: number;
+  items: GqlRegistrySearchItem[];
 }
 
 const REGISTRY_DIRECTORY_QUERY = `
@@ -1165,6 +1251,19 @@ const REGISTRY_DIRECTORY_QUERY = `
 const REGISTRY_FILE_CONTENT_QUERY = `
   query RegistryFileContent($runtimeId: String!, $path: String!) {
     registryFileContent(runtimeId: $runtimeId, path: $path) { ${FETCHABLE}, content }
+  }`;
+
+const REGISTRY_RESOURCE_SEARCH_QUERY = `
+  query RegistryResourceSearch($runtimeId: String!, $path: String!, $searchKey: String!) {
+    registryResourceSearch(runtimeId: $runtimeId, path: $path, searchKey: $searchKey) {
+      count
+      items {
+        name
+        path
+        mediaType
+        isDirectory
+      }
+    }
   }`;
 
 const REGISTRY_RESOURCE_METADATA_QUERY = `
@@ -1203,6 +1302,20 @@ export function useRegistryDirectory(runtimeId: string, path: string, expand = f
     }),
     (d) => d as GqlRegistryDirectoryResponse,
   );
+}
+
+export function useRegistryResourceSearch(runtimeId: string, path: string, searchKey: string, enabled = true) {
+  const normalizedSearchKey = searchKey.trim();
+  return useQuery({
+    queryKey: ['registryResourceSearch', runtimeId, path, normalizedSearchKey],
+    queryFn: () =>
+      gql<{ registryResourceSearch: GqlRegistrySearchResponse }>(REGISTRY_RESOURCE_SEARCH_QUERY, {
+        runtimeId,
+        path,
+        searchKey: normalizedSearchKey,
+      }).then((d) => d.registryResourceSearch),
+    enabled: enabled && !!runtimeId && !!path && normalizedSearchKey.length >= 2,
+  });
 }
 
 export function useRegistryFileContent(runtimeId: string, path: string, enabled = false) {

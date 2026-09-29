@@ -30,24 +30,24 @@ function friendlyLoginError(err: unknown, isSso = false, passwordLoginDisabled =
   const message = rawMessage.toLowerCase();
   const status = (err as Record<string, unknown>)?.status as number | undefined;
 
-  if (message.includes('failed to fetch') || message.includes('networkerror') || err instanceof TypeError) return 'Unable to connect to the server. Please check your connection and try again.';
+  if (message.includes('failed to fetch') || message.includes('networkerror') || err instanceof TypeError) return 'Não foi possível conectar ao servidor. Verifique sua conexão e tente novamente.';
 
   if (isSso) {
-    if (status === 429 || message.includes('too many') || message.includes('rate limit')) return 'Account temporarily locked due to too many failed attempts.';
+    if (status === 429 || message.includes('too many') || message.includes('rate limit')) return 'A conta foi bloqueada temporariamente devido a muitas tentativas malsucedidas.';
     return rawMessage && !rawMessage.startsWith('SSO login failed (')
       ? rawMessage
       : passwordLoginDisabled
-        ? 'Single sign-on is currently unavailable. Please try again later or contact your administrator.'
-        : 'Single sign-on is currently unavailable. Please try again later or use username and password.';
+        ? 'O login único está indisponível no momento. Tente novamente mais tarde ou entre em contato com o administrador.'
+        : 'O login único está indisponível no momento. Tente novamente mais tarde ou use usuário e senha.';
   }
 
-  if (message.includes('password login is disabled')) return 'Password sign-in is disabled. Use single sign-on to continue.';
-  if (status === 401 || message.includes('invalid credentials') || message.includes('unauthorized')) return 'Incorrect username or password. Please try again.';
-  if (status === 429 || message.includes('too many') || message.includes('rate limit')) return 'Account temporarily locked due to too many failed attempts.';
-  if (status === 403 || message.includes('locked') || message.includes('disabled') || message.includes('forbidden')) return 'Your account has been locked or disabled. Please contact your administrator.';
-  if (status === 404 || message.includes('not found')) return 'Account not found. Please check your username and try again.';
-  if ((status && status >= 500) || message.includes('internal') || message.includes('server error')) return 'Something went wrong on our end. Please try again later.';
-  return 'Sign-in failed. Please try again or contact your administrator.';
+  if (message.includes('password login is disabled')) return 'O login com senha está desabilitado. Use o login único para continuar.';
+  if (status === 401 || message.includes('invalid credentials') || message.includes('unauthorized')) return 'Usuário ou senha incorretos. Tente novamente.';
+  if (status === 429 || message.includes('too many') || message.includes('rate limit')) return 'A conta foi bloqueada temporariamente devido a muitas tentativas malsucedidas.';
+  if (status === 403 || message.includes('locked') || message.includes('disabled') || message.includes('forbidden')) return 'Sua conta foi bloqueada ou desabilitada. Entre em contato com o administrador.';
+  if (status === 404 || message.includes('not found')) return 'Conta não encontrada. Verifique seu usuário e tente novamente.';
+  if ((status && status >= 500) || message.includes('internal') || message.includes('server error')) return 'Ocorreu um erro no servidor. Tente novamente mais tarde.';
+  return 'Falha ao entrar. Tente novamente ou entre em contato com o administrador.';
 }
 
 export default function LoginForm(): JSX.Element {
@@ -111,13 +111,13 @@ export default function LoginForm(): JSX.Element {
   return (
     <form onSubmit={handleLogin} method="post">
       <Typography variant="h4" component="h2" sx={{ mb: 4, textAlign: 'center' }}>
-        Sign In
+        Entrar
       </Typography>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
-          {isLockedOut && ` Try again in ${lockoutSeconds}s.`}
+          {isLockedOut && ` Tente novamente em ${lockoutSeconds}s.`}
         </Alert>
       )}
 
@@ -125,23 +125,23 @@ export default function LoginForm(): JSX.Element {
         {!passwordLoginDisabled && (
           <>
             <Box display="flex" flexDirection="column" gap={0.5}>
-              <InputLabel htmlFor="username">Username</InputLabel>
-              <OutlinedInput type="text" id="username" name="username" placeholder="Enter username" value={username} onChange={(e) => setUsername(e.target.value)} size="small" required disabled={loading} />
+              <InputLabel htmlFor="username">Usuário</InputLabel>
+              <OutlinedInput type="text" id="username" name="username" placeholder="Digite seu usuário" value={username} onChange={(e) => setUsername(e.target.value)} size="small" required disabled={loading} />
             </Box>
             <Box display="flex" flexDirection="column" gap={0.5}>
-              <InputLabel htmlFor="password">Password</InputLabel>
+              <InputLabel htmlFor="password">Senha</InputLabel>
               <OutlinedInput
                 type={showPassword ? 'text' : 'password'}
                 endAdornment={
                   <InputAdornment position="end">
-                    <IconButton aria-label={showPassword ? 'hide the password' : 'display the password'} onClick={handleClickShowPassword} onMouseDown={handleMouseDownPassword} onMouseUp={handleMouseUpPassword} edge="end">
+                    <IconButton aria-label={showPassword ? 'ocultar a senha' : 'exibir a senha'} onClick={handleClickShowPassword} onMouseDown={handleMouseDownPassword} onMouseUp={handleMouseUpPassword} edge="end">
                       {showPassword ? <EyeOff /> : <Eye />}
                     </IconButton>
                   </InputAdornment>
                 }
                 id="password"
                 name="password"
-                placeholder="Enter password"
+                placeholder="Digite sua senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 size="small"
@@ -158,14 +158,14 @@ export default function LoginForm(): JSX.Element {
               sx={{ mt: 1, bgcolor: '#1e1e1e', '&:hover': { bgcolor: '#333' }, textTransform: 'none', py: 1.2 }}
               disabled={loading || isLockedOut}
               startIcon={loading ? <CircularProgress size={20} color="inherit" /> : undefined}>
-              {isLockedOut ? `Locked (${lockoutSeconds}s)` : loading ? 'Signing In...' : 'Sign In'}
+              {isLockedOut ? `Bloqueado (${lockoutSeconds}s)` : loading ? 'Entrando...' : 'Entrar'}
             </Button>
           </>
         )}
 
         {ssoEnabled && (
           <>
-            {!passwordLoginDisabled && <Divider sx={{ my: 0.5 }}>OR</Divider>}
+            {!passwordLoginDisabled && <Divider sx={{ my: 0.5 }}>OU</Divider>}
 
             <Button
               type="button"
@@ -175,7 +175,7 @@ export default function LoginForm(): JSX.Element {
               onClick={handleSSOLogin}
               disabled={(!passwordLoginDisabled && loading) || ssoLoading}
               startIcon={ssoLoading ? <CircularProgress size={20} color="inherit" /> : undefined}>
-              {ssoLoading ? 'Redirecting...' : 'Sign in with SSO'}
+              {ssoLoading ? 'Redirecionando...' : 'Entrar com login único'}
             </Button>
           </>
         )}

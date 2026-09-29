@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ${NAMESPACE}
+labels:
+  - pairs:
+      app: "${APP_NAME}"
+    includeSelectors: true
+  - pairs:
+      app.kubernetes.io/part-of: "${NAMESPACE}"
+      app.kubernetes.io/name: "${APP_NAME}"
+      app.kubernetes.io/version: "${TAG}"
+      app.kubernetes.io/managed-by: "${MANAGED_BY}"
+    includeSelectors: false
+resources:
+  - secret.yml
+  - config-map.yml
+  - deployment.yml
+  - hpa.yml
+  - service.yml
+  - ingress.yml

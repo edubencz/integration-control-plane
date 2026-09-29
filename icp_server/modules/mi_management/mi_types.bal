@@ -49,3 +49,10 @@ type MgmtFaultResponse record {
     string errorMessage?;
     string faultStackTrace?;
 };
+
+public type MgmtCompositeAppFaultResponse record {
+    string name;
+    string version?;
+    string errorMessage?;
+    string faultStackTrace?;
+};

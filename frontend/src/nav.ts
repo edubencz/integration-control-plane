@@ -15,7 +15,7 @@ export type Scope = OrgScope | ProjectScope | ComponentScope;
 
 export type ScopeForLevel = { organizations: OrgScope; projects: ProjectScope; components: ComponentScope };
 
-export type Resource = 'overview' | 'workflows' | 'tasks' | 'test' | 'logs' | 'loggers' | 'metrics' | 'runtimes' | 'environments' | 'access-control';
+export type Resource = 'overview' | 'workflows' | 'tasks' | 'test' | 'logs' | 'loggers' | 'metrics' | 'runtimes' | 'environments' | 'deployments' | 'audit-logs' | 'access-control';
 
 export type Matrix = { [R in Resource]: { segment: string; pages: Partial<{ [L in Level]: FC<ScopeForLevel[L]> }> } };
 
@@ -110,6 +110,7 @@ export function narrow(scope: Scope, childId: string): Scope {
 // Labels where capitalize(resource) is not the name people know the page by.
 const SIDEBAR_LABELS: Partial<Record<Resource, string>> = {
   tasks: 'Human Tasks',
+  'audit-logs': 'Audit Logs',
 };
 
 export function sidebarItems(scope: Scope, currentResource: Resource | null): SidebarItem[] {

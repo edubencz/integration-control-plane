@@ -1,0 +1,32 @@
+stages:
+  - build
+  - security
+  - docker
+  - container-security
+  - deploy
+
+variables:
+  MANAGED_BY: gitlab-ci
+  APP_NAME: integration-control-plane
+  ICP_VERSION: 2.0.0-SNAPSHOT
+  NAMESPACE: integration
+  DOCKER_REPO: docker.nexdom.tec.br/tecnologia/framework
+  JDK: maven:3.9-eclipse-temurin-25
+  IMG_BUILD: ballerina/ballerina:2201.14.0-alpha3
+  IMG_DOCKER: docker:28.0.0
+  IMG_DOCKER_DIND: docker:28.0.0-dind
+  IMG_DOCKER_KUBECTL: alpine:3.20
+  IMG_POSTGRES: docker-hub.nexdom.tec.br/postgres:16-alpine
+  IMG_BALLERINA: docker-hub.nexdom.tec.br/ballerina/ballerina:2201.14.0-alpha3
+  DIR_K8S_RENDERED: tmp/k8s-rendered
+
+include:
+  - local: .cicd/build/all.yml                    # stage build
+# - local: 'ci-jobs/security/static-scans.yml'    # stage security
+  - local: .cicd/docker/all.yml                   # stage docker
+  - local: .cicd/container-security/all.yml       # stage container-security
+  - local: .cicd/deploy/all.yml                   # stage deploy
+
+  - project: 'nexdom/devops/ci-templates'              # stage security
+    ref: main
+    file: 'ci-jobs/security/static-scans.yml'
