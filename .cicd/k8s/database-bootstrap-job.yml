@@ -1,0 +1,58 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${APP_NAME}-database-bootstrap
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${APP_NAME}
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}
+        component: database-bootstrap
+    spec:
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 1000
+      initContainers:
+        - name: hash-admin-password
+          image: ${IMG_BALLERINA}
+          command: ["bal", "run", "/scripts/hash_admin.bal"]
+          env:
+            - name: ICP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: ${APP_NAME}-bootstrap
+                  key: ICP_ADMIN_PASSWORD
+            - name: ADMIN_HASH_FILE
+              value: /work/admin.hash
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: work
+              mountPath: /work
+      containers:
+        - name: postgres-bootstrap
+          image: ${IMG_POSTGRES}
+          command: ["/bin/sh", "/scripts/bootstrap.sh"]
+          envFrom:
+            - secretRef:
+                name: ${APP_NAME}-bootstrap
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: work
+              mountPath: /work
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: ${APP_NAME}-db-scripts
+            defaultMode: 0555
+        - name: work
+          emptyDir: {}

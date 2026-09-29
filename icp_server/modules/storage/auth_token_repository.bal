@@ -53,12 +53,15 @@ public isolated function storeRefreshToken(string tokenId, string userId, string
 public isolated function validateRefreshToken(string tokenHash) returns types:User|error {
     log:printDebug("Validating refresh token");
 
-    // Query for the refresh token with seconds remaining until expiry
-    // Use dialect-specific TIMESTAMPDIFF to avoid UNIX_TIMESTAMP compatibility issues with H2
+    // Refresh-token timestamps are stored in UTC. Compare them with an application-generated
+    // UTC timestamp as well, since CURRENT_TIMESTAMP can use the database server's local timezone.
+    // Mixing those clocks makes expired tokens appear valid when the server is behind UTC.
+    string currentUtcStr = check convertUtcToDbDateTime(time:utcNow());
+    string currentUtcExpression = timestampCast(currentUtcStr);
     sql:ParameterizedQuery selectQuery = sql:queryConcat(
         `SELECT token_id, user_id, revoked, `,
         sql:queryConcat(
-            sqlQueryFromString(getTimestampDiffSeconds("CURRENT_TIMESTAMP", "expires_at")),
+            sqlQueryFromString(getTimestampDiffSeconds(currentUtcExpression, "expires_at")),
             ` as seconds_until_expiry FROM refresh_tokens WHERE token_hash = ${tokenHash}`
         )
     );

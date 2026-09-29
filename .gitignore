@@ -178,6 +178,12 @@ temp/
 # H2 database
 database/
 
+# CI/CD sources are versioned even though their directory names match build outputs.
+!.cicd/build/
+!.cicd/build/**
+!.cicd/database/
+!.cicd/database/**
+
 www/*
 
 frontend/.vite

@@ -20,12 +20,12 @@ class PublicPagesScenariosTest extends BaseCoreE2ETest {
     void policyPagesArePublic() {
         open("/privacy-policy");
         assertThat(page).hasURL(Pattern.compile(".*/privacy-policy$"));
-        assertThat(page.getByText("WSO2 Integration Platform - Privacy Policy", new Page.GetByTextOptions().setExact(true))).isVisible();
-        assertThat(page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName("Sign In"))).not().isVisible();
+        assertThat(page.getByText("NEXDOM Integration Platform - Política de Privacidade", new Page.GetByTextOptions().setExact(true))).isVisible();
+        assertThat(page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName("Entrar"))).not().isVisible();
 
         open("/cookie-policy");
         assertThat(page).hasURL(Pattern.compile(".*/cookie-policy$"));
-        assertThat(page.getByText("WSO2 Integration Platform - Cookie Policy", new Page.GetByTextOptions().setExact(true))).isVisible();
-        assertThat(page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName("Sign In"))).not().isVisible();
+        assertThat(page.getByText("NEXDOM Integration Platform - Política de Cookies", new Page.GetByTextOptions().setExact(true))).isVisible();
+        assertThat(page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName("Entrar"))).not().isVisible();
     }
 }

@@ -57,8 +57,10 @@ public client class DatabaseConnectionManager {
             log:printInfo("MSSQL Database initialized successfully.");
         } else if dbType == POSTGRESQL {
             log:printInfo("Initializing PostgreSQL Database...");
-            log:printInfo(string `Connecting to PostgreSQL: ${dbHost}:${dbPort}/${dbName}`);
-            self.dbClient = check new postgresql:Client(host = dbHost, username = dbUser, password = dbPassword, database = dbName, port = dbPort, connectionPool = pool);
+            log:printInfo(string `Connecting to PostgreSQL: ${dbHost}:${dbPort}/${dbName} (TLS: ${useTLS})`);
+            postgresql:Options? postgresqlOptions = useTLS ? {ssl: {mode: postgresql:REQUIRE}} : ();
+            self.dbClient = check new postgresql:Client(host = dbHost, username = dbUser, password = dbPassword,
+                database = dbName, port = dbPort, options = postgresqlOptions, connectionPool = pool);
             log:printInfo("PostgreSQL Database initialized successfully.");
         } else if dbType == ORACLE {
             log:printInfo("Initializing Oracle Database...");
@@ -70,7 +72,12 @@ public client class DatabaseConnectionManager {
             log:printInfo("Oracle Database initialized successfully.");
         } else {
             log:printInfo("Initializing H2 Database...");
-            self.dbClient = check new jdbc:Client(string `jdbc:h2:file:./database/${dbName};MODE=MySQL;AUTO_SERVER=TRUE`, dbUser, dbPassword);
+            self.dbClient = check new jdbc:Client(
+                string `jdbc:h2:file:./database/${dbName};MODE=MySQL;AUTO_SERVER=TRUE`,
+                dbUser,
+                dbPassword,
+                connectionPool = pool
+            );
             log:printInfo("H2 Database initialized successfully.");
         }
     }

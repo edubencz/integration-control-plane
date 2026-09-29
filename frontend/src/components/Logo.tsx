@@ -25,7 +25,7 @@ export default function Logo() {
         light: `${import.meta.env.BASE_URL}assets/images/logo/WSO2-Integration-Platform-Black.svg`,
         dark: `${import.meta.env.BASE_URL}assets/images/logo/WSO2-Integration-Platform-White.svg`,
       }}
-      alt={{ light: 'WSO2 Integration Platform Logo', dark: 'WSO2 Integration Platform Logo' }}
+      alt={{ light: 'NEXDOM Integration Platform Logo', dark: 'NEXDOM Integration Platform Logo' }}
       height={30}
       width="auto"
     />

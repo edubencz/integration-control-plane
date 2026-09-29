@@ -1,0 +1,17 @@
+.script-docker:
+  script:
+    - |
+      echo "$DOCKER_REPO/$APP_NAME:$TAG"
+      echo "Acessando GitLab Registry"
+      echo "$CI_REGISTRY_PASSWORD" | docker login "$CI_REGISTRY" -u "$CI_REGISTRY_USER" --password-stdin
+      # Nexus login is required before the build because the Ballerina builder
+      # image is resolved from the internal Docker Hub mirror.
+      echo "Acessando Nexus"
+      echo "$REGISTRY_PASS" | docker login "$REGISTRY_URL" -u "$REGISTRY_USER" --password-stdin
+      export BALLERINA_REGISTRY="${IMG_BALLERINA%%/*}"
+      echo "Autenticando no registry da imagem Ballerina: $BALLERINA_REGISTRY"
+      echo "$REGISTRY_PASS" | docker login "$BALLERINA_REGISTRY" -u "$REGISTRY_USER" --password-stdin
+      docker build --build-arg ICP_VERSION="${ICP_VERSION}" --build-arg BALLERINA_IMAGE="${IMG_BALLERINA}" -f docker/Dockerfile -t "${CI_REGISTRY_IMAGE}:${TAG}" .
+      docker push "${CI_REGISTRY_IMAGE}:${TAG}"
+      docker tag "${CI_REGISTRY_IMAGE}:${TAG}" "${DOCKER_REPO}/${APP_NAME}:${TAG}"
+      docker push "${DOCKER_REPO}/${APP_NAME}:${TAG}"

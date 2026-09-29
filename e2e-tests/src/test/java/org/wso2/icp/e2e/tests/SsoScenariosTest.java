@@ -23,7 +23,7 @@ class SsoScenariosTest extends BaseSsoE2ETest {
     @DisplayName("ThunderID SSO login succeeds")
     void thunderIdSsoLoginSucceeds() {
         new LoginPage(page).open(config.baseUrl());
-        page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Sign in with SSO")).click();
+        page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Entrar com login único")).click();
         assertThat(page).hasURL(Pattern.compile("https://localhost:\\d+/gate/signin.*"));
 
         page.getByPlaceholder("Enter your username").fill(E2EEnvironment.SSO_USERNAME);

@@ -92,6 +92,10 @@ configurable string backendAuthBaseUrl = publicBaseUrl + "/auth";
 configurable string backendObservabilityEndpoint = publicBaseUrl + "/icp/observability";
 configurable string backendWorkflowEndpoint = publicBaseUrl + "/icp/workflow";
 configurable string backendTryitEndpoint = publicBaseUrl + "/icp/tryit";
+configurable string backendMiApplicationsEndpoint = publicBaseUrl + "/icp/mi_applications";
+configurable string backendMiServerEndpoint = publicBaseUrl + "/icp/mi_server";
+configurable string backendMiRegistryEndpoint = publicBaseUrl + "/icp/mi_registry";
+configurable string backendMiDeploymentsEndpoint = publicBaseUrl + "/icp/mi_deployments";
 
 // WebSocket endpoint — shares the main HTTPS port so no separate cert trust is needed
 configurable string backendWsUrl = toWsScheme(publicBaseUrl) + "/runtime-status";
@@ -137,6 +141,19 @@ configurable boolean federatedAccessControlEnabled = false; // Manage group memb
 configurable string logLevel = "INFO"; // DEBUG, INFO, WARN, ERROR
 configurable boolean enableAuditLogging = true;
 configurable string auditLogFilePath = "../logs/audit.log";
+configurable int auditLogRetentionDays = 90;
+configurable int auditLogCleanupIntervalSeconds = 86400;
+// Organization-wide MI Carbon Application deployment controls.
+// Limits how many deployment targets (runtimes) may be in flight at once.
+configurable int miDeploymentMaxConcurrentProjects = 5;
+configurable int miDeploymentMaxCarSizeBytes = 104857600;
+configurable int miDeploymentVerifyAttempts = 31;
+configurable int miDeploymentVerifyIntervalSeconds = 4;
+configurable int miDeploymentVerifyStableSeconds = 12;
+configurable int miDeploymentVerifyTimeoutSeconds = 120;
+configurable int miDeploymentDeleteVerifyTimeoutSeconds = 120;
+configurable int miDeploymentArtifactRetentionDays = 7;
+configurable int miDeploymentHistoryRetentionDays = 90;
 configurable boolean enableMetrics = true;
 
 // Observability Adapter configuration
@@ -274,4 +291,20 @@ public isolated function validateSSOConfig(types:SSOConfig config) returns error
             }
         }
     }
+}
+
+// Deployment verification must have enough budget to observe the configured
+// stability window and, for deletes, two consecutive missing observations.
+public isolated function validateMIDeploymentVerificationConfig() returns error? {
+    if miDeploymentVerifyAttempts < 1 { return error("'miDeploymentVerifyAttempts' must be positive"); }
+    if miDeploymentVerifyIntervalSeconds < 1 { return error("'miDeploymentVerifyIntervalSeconds' must be positive"); }
+    if miDeploymentVerifyStableSeconds < 1 { return error("'miDeploymentVerifyStableSeconds' must be positive"); }
+    if miDeploymentVerifyTimeoutSeconds < miDeploymentVerifyStableSeconds {
+        return error("'miDeploymentVerifyTimeoutSeconds' must cover the stability window");
+    }
+    if miDeploymentDeleteVerifyTimeoutSeconds < miDeploymentVerifyIntervalSeconds {
+        return error("'miDeploymentDeleteVerifyTimeoutSeconds' must allow consecutive removal checks");
+    }
+    if miDeploymentMaxConcurrentProjects < 1 { return error("'miDeploymentMaxConcurrentProjects' must be positive"); }
+    if miDeploymentMaxConcurrentProjects > 50 { return error("'miDeploymentMaxConcurrentProjects' must not exceed 50"); }
 }

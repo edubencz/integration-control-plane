@@ -38,6 +38,8 @@ const string HB_RESTART_NAME = "hb-restart-test-unique-runtime";
 // Service-listener binding test: dedicated ID cleaned up via an AfterGroups
 // teardown so rows never leak when an assertion aborts the test.
 const string HB_SERVICE_LISTENER_ID = "aa000001-test-test-test-000000000010";
+// Connector identity regression test: same connector name in two packages.
+const string HB_CONNECTOR_ID = "aa000001-test-test-test-000000000011";
 
 // =============================================================================
 // Helpers
@@ -148,6 +150,62 @@ function testServiceListenerBindingRoundTrip() returns error? {
 }
 function afterServiceListenerTests() {
     cleanupRuntime(HB_SERVICE_LISTENER_ID);
+}
+
+// =============================================================================
+// Test: connector reconcile identity includes package
+//
+// MI permits connectors with the same name in different packages. The runtime
+// artifact table keys them by (name, package), so the observed-state key must
+// preserve that distinction as well.
+// =============================================================================
+@test:Config {
+    groups: ["heartbeat", "mi-artifacts", "connector-identity"]
+}
+function testMIConnectorIdentityIncludesPackage() returns error? {
+    string runtimeId = HB_CONNECTOR_ID;
+    cleanupRuntime(runtimeId);
+
+    types:Component|error? componentResult = storage:createComponent({
+        projectId: HB_PROJECT_ID,
+        name: "hb-mi-connector-identity",
+        componentType: types:MI
+    });
+    if componentResult is error {
+        return componentResult;
+    }
+    if componentResult is () {
+        return error("Failed to create MI component for connector identity test");
+    }
+    string componentId = componentResult.id;
+
+    types:Heartbeat heartbeat = buildMIHeartbeat(runtimeId);
+    heartbeat.component = componentId;
+    heartbeat.artifacts.connectors = [
+        {name: "sharedConnector", 'package: "org.example.first", version: "1.0.0", state: "enabled"},
+        {name: "sharedConnector", 'package: "org.example.second", version: "1.0.0", state: "disabled"}
+    ];
+
+    types:HeartbeatResponse first = check storage:processHeartbeat(heartbeat, preResolved = true);
+    test:assertTrue(first.acknowledged, "Heartbeat with same-name connectors should be acknowledged");
+
+    types:Connector[] connectors = check storage:getConnectorsForRuntime(runtimeId);
+    test:assertEquals(connectors.length(), 2, "Both package-qualified connectors should be stored");
+
+    map<string> firstObserved = check storage:readReconcileObservedState(runtimeId,
+        {artifactName: "org.example.first:sharedConnector", artifactType: "connector"});
+    map<string> secondObserved = check storage:readReconcileObservedState(runtimeId,
+        {artifactName: "org.example.second:sharedConnector", artifactType: "connector"});
+    test:assertEquals(firstObserved["status"], "enabled", "First connector state should be observed");
+    test:assertEquals(secondObserved["status"], "disabled", "Second connector state should be observed");
+
+    // A subsequent full heartbeat must remain idempotent and must not produce
+    // the H2 duplicate-target MERGE failure that caused the original loop.
+    types:HeartbeatResponse second = check storage:processHeartbeat(heartbeat, preResolved = true);
+    test:assertTrue(second.acknowledged, "Repeated heartbeat should be acknowledged");
+
+    cleanupRuntime(runtimeId);
+    check storage:deleteComponent(componentId);
 }
 
 // =============================================================================
@@ -272,6 +330,89 @@ function testMIInboundEndpointAcceptsNullProtocol() returns error? {
     types:InboundEndpoint[] inboundEndpoints = check storage:getInboundEndpointsForRuntime(runtimeId);
     test:assertEquals(inboundEndpoints.length(), 1, "Expected one inbound endpoint to be stored");
     test:assertEquals(inboundEndpoints[0].protocol, (), "Custom inbound endpoint protocol should remain null");
+
+    cleanupRuntime(runtimeId);
+}
+
+// =============================================================================
+// Test: Try-It target lookups release their SQL result sets.
+//
+// The target lookup used a Ballerina `limit 1` over a SQL stream. That stops
+// iteration before the connector can automatically close the result set, so
+// repeated Try-It requests eventually exhausted the H2 pool.
+// =============================================================================
+@test:Config {
+    groups: ["heartbeat", "tryit"]
+}
+function testTryItTargetLookupDoesNotExhaustPool() returns error? {
+    string runtimeId = "aa000001-test-test-test-000000000012";
+    cleanupRuntime(runtimeId);
+
+    types:Heartbeat heartbeat = buildHeartbeat(runtimeId, "hb-tryit-runtime");
+    heartbeat.tryItHost = "127.0.0.1";
+    heartbeat.artifacts = {
+        listeners: [{name: "tryitListener", package: "app", protocol: "HTTP",
+            host: "0.0.0.0", port: 8080, state: "enabled"}]
+    };
+    types:HeartbeatResponse response = check storage:processHeartbeat(heartbeat, preResolved = true);
+    test:assertTrue(response.acknowledged, "Try-It BI heartbeat should be acknowledged");
+
+    foreach int _ in 0 ..< 20 {
+        types:TryItTarget? target = check storage:getTryItTarget(
+            HB_COMPONENT_ID, HB_ENV_ID, runtimeId, 8080);
+        test:assertTrue(target is types:TryItTarget, "BI Try-It target should resolve");
+        if target is types:TryItTarget {
+            test:assertEquals(target.host, "127.0.0.1");
+            test:assertEquals(target.protocol, "HTTP");
+        }
+    }
+
+    types:TryItTarget? missingTarget = check storage:getTryItTarget(
+        HB_COMPONENT_ID, HB_ENV_ID, runtimeId, 9999);
+    test:assertEquals(missingTarget, (), "Unknown BI listener should not resolve");
+
+    // A separate lookup proves that all target result sets returned their
+    // connections to the pool after the repeated calls above.
+    types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+    test:assertNotEquals(runtime, (), "Runtime lookup should remain available");
+
+    cleanupRuntime(runtimeId);
+}
+
+@test:Config {
+    groups: ["heartbeat", "tryit"]
+}
+function testMiTryItTargetLookupDoesNotExhaustPool() returns error? {
+    string runtimeId = "aa000001-test-test-test-000000000013";
+    cleanupRuntime(runtimeId);
+
+    types:Heartbeat heartbeat = buildMIHeartbeat(runtimeId);
+    heartbeat.runtimeHostname = "127.0.0.1";
+    heartbeat.artifacts = {
+        apis: [{name: "tryitApi", url: "http://127.0.0.1:8290/orders",
+            context: "/orders", state: "enabled"}]
+    };
+    types:HeartbeatResponse response = check storage:processHeartbeat(heartbeat, preResolved = true);
+    test:assertTrue(response.acknowledged, "Try-It MI heartbeat should be acknowledged");
+
+    foreach int _ in 0 ..< 20 {
+        types:MiTryItTarget? target = check storage:getMiTryItTarget(
+            HB_COMPONENT_ID, HB_ENV_ID, runtimeId, "tryitApi");
+        test:assertTrue(target is types:MiTryItTarget, "MI Try-It target should resolve");
+        if target is types:MiTryItTarget {
+            test:assertEquals(target.host, "127.0.0.1");
+            test:assertEquals(target.protocol, "http");
+            test:assertEquals(target.port, 8290);
+            test:assertEquals(target.context, "/orders");
+        }
+    }
+
+    types:MiTryItTarget? missingTarget = check storage:getMiTryItTarget(
+        HB_COMPONENT_ID, HB_ENV_ID, runtimeId, "missingApi");
+    test:assertEquals(missingTarget, (), "Unknown MI API should not resolve");
+
+    types:Runtime? runtime = check storage:getRuntimeById(runtimeId);
+    test:assertNotEquals(runtime, (), "Runtime lookup should remain available");
 
     cleanupRuntime(runtimeId);
 }

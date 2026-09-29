@@ -38,7 +38,7 @@ class AuthenticationScenariosTest extends BaseCoreE2ETest {
 
         assertThat(page).hasURL(Pattern.compile(".*/login$"));
         login.assertVisible();
-        login.assertError("incorrect username or password|sign-in failed|account temporarily locked");
+        login.assertError("usuário ou senha incorretos|falha ao entrar|conta foi bloqueada temporariamente");
     }
 
     @Test
@@ -68,13 +68,13 @@ class AuthenticationScenariosTest extends BaseCoreE2ETest {
     void loginLinksPolicyPages() {
         new LoginPage(page).open(config.baseUrl());
 
-        page.getByRole(AriaRole.LINK, new Page.GetByRoleOptions().setName("Privacy Policy")).click();
+        page.getByRole(AriaRole.LINK, new Page.GetByRoleOptions().setName("Política de Privacidade")).click();
         assertThat(page).hasURL(Pattern.compile(".*/privacy-policy$"));
-        assertThat(page.getByText("WSO2 Integration Platform - Privacy Policy", new Page.GetByTextOptions().setExact(true))).isVisible();
+        assertThat(page.getByText("NEXDOM Integration Platform - Política de Privacidade", new Page.GetByTextOptions().setExact(true))).isVisible();
 
         page.navigate(config.url("/login"));
-        page.getByRole(AriaRole.LINK, new Page.GetByRoleOptions().setName("Cookie Policy")).click();
+        page.getByRole(AriaRole.LINK, new Page.GetByRoleOptions().setName("Política de Cookies")).click();
         assertThat(page).hasURL(Pattern.compile(".*/cookie-policy$"));
-        assertThat(page.getByText("WSO2 Integration Platform - Cookie Policy", new Page.GetByTextOptions().setExact(true))).isVisible();
+        assertThat(page.getByText("NEXDOM Integration Platform - Política de Cookies", new Page.GetByTextOptions().setExact(true))).isVisible();
     }
 }

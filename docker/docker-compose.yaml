@@ -1,0 +1,76 @@
+name: nexdom-integration-control-plane
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: icp_database
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: my-secret-pw
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../icp_server/resources/db/init-scripts/postgresql_init.sql:/docker-entrypoint-initdb.d/01-icp.sql:ro
+      - ../icp_server/resources/db/init-scripts/credentials_postgresql_init.sql:/docker-entrypoint-initdb.d/02-credentials.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d icp_database"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    networks:
+      - icp-network
+
+  migrations:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      PGPASSWORD: my-secret-pw
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ../icp_server/resources/db/migration-scripts/add_audit_log_ui_postgresql.sql:/migrations/01-audit-log-ui.sql:ro
+      - ../icp_server/resources/db/migration-scripts/add_mi_deployments_feature_postgresql.sql:/migrations/02-mi-deployments.sql:ro
+      - ../icp_server/resources/db/migration-scripts/add_mi_deployment_history_postgresql.sql:/migrations/03-mi-deployment-history.sql:ro
+    command:
+      - sh
+      - -ec
+      - |
+        psql -h postgres -U postgres -d icp_database -v ON_ERROR_STOP=1 -f /migrations/01-audit-log-ui.sql
+        psql -h postgres -U postgres -d icp_database -v ON_ERROR_STOP=1 -f /migrations/02-mi-deployments.sql
+        psql -h postgres -U postgres -d icp_database -v ON_ERROR_STOP=1 -f /migrations/03-mi-deployment-history.sql
+    networks:
+      - icp-network
+
+  nexdom-icp:
+    image: integration-control-plane:local
+    pull_policy: build
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        ICP_VERSION: ${ICP_VERSION:-2.0.0-SNAPSHOT}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+    volumes:
+      - ../icp_server/Config.toml:/home/wso2/wso2-integration-control-plane-${ICP_VERSION:-2.0.0-SNAPSHOT}/conf/deployment.toml:ro
+    ports:
+      - "9445:9445"
+      - "9446:9446"
+      - "9449:9449"
+    networks:
+      - icp-network
+
+volumes:
+  postgres-data:
+
+networks:
+  icp-network:
+    driver: bridge

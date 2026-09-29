@@ -21,15 +21,15 @@ public class LoginPage {
     }
 
     public void assertVisible() {
-        assertThat(page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName("Sign In"))).isVisible();
-        assertThat(page.getByLabel("Username")).isVisible();
+        assertThat(page.getByRole(AriaRole.HEADING, new Page.GetByRoleOptions().setName("Entrar"))).isVisible();
+        assertThat(page.getByLabel("Usuário")).isVisible();
         assertThat(password()).isVisible();
     }
 
     public void signIn(String username, String password) {
-        page.getByLabel("Username").fill(username);
+        page.getByLabel("Usuário").fill(username);
         password().fill(password);
-        page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Sign In").setExact(true)).click();
+        page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName("Entrar").setExact(true)).click();
     }
 
     public void assertError(String messageRegex) {

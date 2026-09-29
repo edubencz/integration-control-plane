@@ -53,7 +53,7 @@ public const string ARTIFACT_TYPE_DATA_SOURCE = "data-source";
 // Artifact-specific fetch functions
 // ============================================================
 
-isolated function fetchApiArtifact(http:Client mgmtClient, string hmacToken, string apiName) returns types:MgmtRestApiInfo|error {
+public isolated function fetchApiArtifact(http:Client mgmtClient, string hmacToken, string apiName) returns types:MgmtRestApiInfo|error {
     string path = string `${MGMT_API_PATH}/apis?apiName=${apiName}`;
     log:printDebug("Calling MI management API", path = path);
     types:MgmtRestApiInfo respResult = check mgmtClient->get(path, {
@@ -61,6 +61,106 @@ isolated function fetchApiArtifact(http:Client mgmtClient, string hmacToken, str
         [HEADER_ACCEPT]: CONTENT_TYPE_JSON
     });
     return respResult;
+}
+
+// Fetch the OpenAPI document exposed by the API's own listener. Prefer the runtime's HTTPS
+// endpoint on the standard external port (443), which is how MI APIs are commonly exposed
+// behind an ingress. Fall back to the scheme and listener port advertised by the MI Management
+// API for direct/local runtime deployments. Only the already-trusted runtime host is used.
+public isolated function fetchApiSwagger(types:Runtime runtime, string componentId, string environmentId,
+        types:MgmtRestApiInfo apiInfo, boolean allowInsecureTLS) returns string|error {
+    if runtime.managementHostname is () {
+        return error("Runtime hostname is not configured");
+    }
+
+    string runtimeHost = runtime.managementHostname ?: "";
+    string preferredBaseUrl = string `https://${runtimeHost}`;
+    string|error preferredDocument = fetchApiSwaggerFromBaseUrl(preferredBaseUrl, apiInfo.name,
+            allowInsecureTLS);
+    if preferredDocument is string {
+        return preferredDocument;
+    }
+
+    log:printDebug("OpenAPI fetch via preferred HTTPS endpoint failed; trying MI-advertised listener",
+            componentId = componentId, environmentId = environmentId, apiName = apiInfo.name,
+            preferredBaseUrl = preferredBaseUrl, errorMessage = preferredDocument.message());
+
+    string|error advertisedBaseUrl = buildAdvertisedApiBaseUrl(runtimeHost, apiInfo);
+    if advertisedBaseUrl is error {
+        return error(string `OpenAPI fetch failed via preferred endpoint '${preferredBaseUrl}': ${preferredDocument.message()}; unable to resolve MI-advertised listener: ${advertisedBaseUrl.message()}`);
+    }
+    if advertisedBaseUrl == preferredBaseUrl {
+        return preferredDocument;
+    }
+
+    string|error advertisedDocument = fetchApiSwaggerFromBaseUrl(advertisedBaseUrl, apiInfo.name,
+            allowInsecureTLS);
+    if advertisedDocument is string {
+        return advertisedDocument;
+    }
+    return error(string `OpenAPI fetch failed via preferred endpoint '${preferredBaseUrl}': ${preferredDocument.message()}; MI-advertised endpoint '${advertisedBaseUrl}': ${advertisedDocument.message()}`);
+}
+
+isolated function buildAdvertisedApiBaseUrl(string runtimeHost, types:MgmtRestApiInfo apiInfo)
+        returns string|error {
+    if apiInfo.url is () {
+        return error(string `MI did not return a URL for API '${apiInfo.name}'`);
+    }
+
+    string apiUrl = apiInfo.url ?: "";
+    int? schemeEnd = apiUrl.indexOf("://");
+    if schemeEnd is () {
+        return error(string `Invalid MI API URL: ${apiUrl}`);
+    }
+    string scheme = apiUrl.substring(0, schemeEnd).toLowerAscii();
+    if scheme != "http" && scheme != "https" {
+        return error(string `Unsupported MI API URL scheme '${scheme}'`);
+    }
+    int? pathStart = apiUrl.indexOf("/", schemeEnd + 3);
+    if pathStart is () {
+        return error(string `Invalid MI API URL (missing path): ${apiUrl}`);
+    }
+    string authority = apiUrl.substring(schemeEnd + 3, pathStart);
+    int? portSeparator = authority.lastIndexOf(":");
+    string portText = portSeparator is int ? authority.substring(portSeparator + 1) : "";
+    // MI uses -1 when the management API cannot determine the listener port.
+    // Treat that sentinel as absent and fall back to the port encoded in the
+    // API URL (the same URL used by the runtime to expose the API).
+    int listenerPort = portText == "" ? (scheme == "https" ? 443 : 80) : check int:fromString(portText);
+    int? configuredPort = apiInfo.port;
+    if configuredPort is int && configuredPort > 0 {
+        listenerPort = configuredPort;
+    }
+    if listenerPort < 1 || listenerPort > 65535 {
+        return error(string `Invalid MI API listener port: ${listenerPort}`);
+    }
+
+    return string `${scheme}://${runtimeHost}:${listenerPort.toString()}`;
+}
+
+isolated function fetchApiSwaggerFromBaseUrl(string baseUrl, string apiName, boolean allowInsecureTLS)
+        returns string|error {
+    http:Client|error clientResult = allowInsecureTLS
+        ? new (baseUrl, {secureSocket: {enable: false}})
+        : new (baseUrl);
+    if clientResult is error {
+        return error(string `Failed to create API listener client: ${clientResult.message()}`);
+    }
+    http:Response|error responseResult = clientResult->get(string `/${apiName}?swagger.json`, {
+        [HEADER_ACCEPT]: CONTENT_TYPE_JSON
+    });
+    if responseResult is error {
+        return error(string `OpenAPI fetch failed: ${responseResult.message()}`);
+    }
+    if responseResult.statusCode < 200 || responseResult.statusCode >= 300 {
+        string|error body = responseResult.getTextPayload();
+        return error(string `OpenAPI fetch returned status ${responseResult.statusCode}: ${body is string ? body : "Unknown error"}`);
+    }
+    string|error document = responseResult.getTextPayload();
+    if document is error {
+        return error(string `Failed to read OpenAPI document: ${document.message()}`);
+    }
+    return document;
 }
 
 public isolated function fetchProxyServiceArtifact(http:Client mgmtClient, string hmacToken, string proxyServiceName) returns types:MgmtProxyServiceInfo|error {
@@ -481,6 +581,69 @@ public isolated function fetchRegistryDirectory(http:Client mgmtClient, string h
     return {count: respResult.count, items: items};
 }
 
+public isolated function flattenRegistrySearchNode(json node, string parentPath, string searchKey) returns types:RegistrySearchItem[] {
+    types:RegistrySearchItem[] results = [];
+    if node !is map<json> {
+        return results;
+    }
+
+    json? nameValue = node["name"];
+    string name = nameValue is string ? nameValue : "";
+    json? typeValue = node["type"];
+    string nodeType = typeValue is string ? typeValue : "";
+    json? mediaTypeValue = node["mediaType"];
+    string mediaType = mediaTypeValue is string ? mediaTypeValue : nodeType;
+    // MI also returns an empty `files` array for leaf resources. The resource type, not the
+    // presence of that array, determines whether this node represents a directory.
+    boolean isDirectory = nodeType == "directory" || mediaType == "directory";
+    string currentPath = name == "" ? parentPath : parentPath == "" ? name : string `${parentPath}/${name}`;
+
+    if name != "" && name.toLowerAscii().includes(searchKey.toLowerAscii()) {
+        results.push({
+            name: name,
+            path: currentPath,
+            mediaType: isDirectory ? "directory" : mediaType,
+            isDirectory: isDirectory
+        });
+    }
+
+    json? children = node["files"];
+    if children is json[] {
+        foreach json child in children {
+            results.push(...flattenRegistrySearchNode(child, currentPath, searchKey));
+        }
+    }
+    return results;
+}
+
+// Search registry resources recursively below a registry path.
+// The MI endpoint returns a nested tree for searchKey; flatten it for GraphQL consumers.
+public isolated function fetchRegistryResourceSearch(http:Client mgmtClient, string hmacToken, string path, string searchKey) returns types:RegistrySearchResponse|error {
+    string encodedPath = check url:encode(path, "UTF-8");
+    string encodedSearchKey = check url:encode(searchKey, "UTF-8");
+    string apiPath = string `${MGMT_API_PATH}/registry-resources?path=${encodedPath}&searchKey=${encodedSearchKey}`;
+    log:printDebug("Calling MI management API", path = apiPath);
+    json respJson = check mgmtClient->get(apiPath, {
+        [HEADER_AUTHORIZATION]: string `Bearer ${hmacToken}`,
+        [HEADER_ACCEPT]: CONTENT_TYPE_JSON
+    });
+
+    types:RegistrySearchItem[] items = [];
+    if respJson is map<json> {
+        json? listValue = respJson["list"];
+        int slashIndex = path.lastIndexOf("/") ?: -1;
+        string parentPath = slashIndex >= 0 ? path.substring(0, slashIndex) : "";
+        if listValue is map<json> {
+            items = flattenRegistrySearchNode(listValue, parentPath, searchKey);
+        } else if listValue is json[] {
+            foreach json item in listValue {
+                items.push(...flattenRegistrySearchNode(item, path, searchKey));
+            }
+        }
+    }
+    return {count: items.length(), items: items};
+}
+
 // Fetch registry file content from the MI management API
 // GET /management/registry-resources/content?path={path}
 public isolated function fetchRegistryFileContent(http:Client mgmtClient, string hmacToken, string path) returns string|error {
@@ -538,14 +701,18 @@ public isolated function fetchRegistryResourceProperties(http:Client mgmtClient,
 
 // Fetch the fault stack trace for a faulty Composite App from the MI management API
 // GET /management/applications/{appName}/fault
-public isolated function fetchCompositeAppFaultStackTrace(http:Client mgmtClient, string hmacToken, string appName) returns string|error {
+public isolated function fetchCompositeAppFaultDiagnostic(http:Client mgmtClient, string hmacToken, string appName) returns MgmtCompositeAppFaultResponse|error {
     string encodedAppName = check url:encode(appName, "UTF-8");
     string path = string `${MGMT_API_PATH}/applications/${encodedAppName}/fault`;
-    log:printDebug("Calling MI management API for Composite App fault stacktrace", path = path);
-    MgmtCompositeAppFaultResponse respResult = check mgmtClient->get(path, {
+    log:printDebug("Calling MI management API for Composite App fault diagnostic", path = path);
+    return check mgmtClient->get(path, {
         [HEADER_AUTHORIZATION]: string `Bearer ${hmacToken}`,
         [HEADER_ACCEPT]: CONTENT_TYPE_JSON
     });
+}
+
+public isolated function fetchCompositeAppFaultStackTrace(http:Client mgmtClient, string hmacToken, string appName) returns string|error {
+    MgmtCompositeAppFaultResponse respResult = check fetchCompositeAppFaultDiagnostic(mgmtClient, hmacToken, appName);
     string? stackTrace = respResult?.faultStackTrace;
     if stackTrace is () {
         log:printWarn("No fault stack trace found for Composite App", appName = appName);
@@ -593,4 +760,3 @@ public isolated function createRegistryManagementClient(types:Runtime runtime, s
     log:printDebug("Registry management client created", runtimeId = runtimeId, baseUrl = baseUrl);
     return {mgmtClient, hmacToken};
 }
-

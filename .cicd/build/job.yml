@@ -1,0 +1,15 @@
+build:
+  stage: build
+  image:
+    name: ${IMG_BUILD}
+    entrypoint: [""]
+    docker:
+      user: root
+  extends:
+    - .script-build
+    - .rules-build
+  artifacts:
+    name: "${APP_NAME}-${CI_COMMIT_SHA}"
+    expire_in: 1 day
+    paths:
+      - icp_server/target/bin/icp_server.jar

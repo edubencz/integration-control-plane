@@ -13,6 +13,15 @@ runtimeListenerPort = 9445
 # =============================================================================
 schedulerIntervalSeconds = 600
 
+# Short verification windows keep runtime-state tests deterministic and fast.
+miDeploymentVerifyAttempts = 5
+miDeploymentVerifyIntervalSeconds = 1
+miDeploymentVerifyStableSeconds = 2
+miDeploymentVerifyTimeoutSeconds = 4
+miDeploymentDeleteVerifyTimeoutSeconds = 4
+# Sliding-window concurrency for MI deployment targets under test.
+miDeploymentMaxConcurrentProjects = 5
+
 # =============================================================================
 # LOGGING CONFIGURATION
 # =============================================================================
@@ -65,9 +74,10 @@ dbType = "h2"
 dbName = "icp_test_db"
 dbUser = "icp_user"
 dbPassword = "icp_password"
+maxOpenConnections = 10
+minIdleConnections = 2
 heartbeatTimeoutSeconds = 30
 
 [[ballerina.log.modules]]
 name = "wso2/icp_server"
 level = "DEBUG"
-

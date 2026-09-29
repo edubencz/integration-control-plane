@@ -18,6 +18,7 @@
 
 import { TextField, InputAdornment } from '@wso2/oxygen-ui';
 import { Search } from '@wso2/oxygen-ui-icons-react';
+import type { KeyboardEvent, Ref } from 'react';
 
 type SearchFieldProps = {
   value: string;
@@ -27,20 +28,25 @@ type SearchFieldProps = {
   fullWidth?: boolean;
   sx?: object;
   disabled?: boolean;
+  // Optional passthrough for callers that need to intercept keys (e.g. Arrow Down to move focus
+  // into a results list below) or grab the input node (e.g. to refocus it after clearing).
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  inputRef?: Ref<HTMLInputElement>;
 };
 
-export default function SearchField({ value, onChange, placeholder = 'Search...', size = 'small', fullWidth, sx, disabled }: SearchFieldProps) {
+export default function SearchField({ value, onChange, placeholder = 'Search...', size = 'small', fullWidth, sx, disabled, onKeyDown, inputRef }: SearchFieldProps) {
   return (
     <TextField
       fullWidth={fullWidth}
       placeholder={placeholder}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={onKeyDown}
       size={size}
       sx={sx}
       disabled={disabled}
       slotProps={{
-        htmlInput: { 'aria-label': placeholder },
+        htmlInput: { 'aria-label': placeholder, ref: inputRef },
         input: {
           startAdornment: (
             <InputAdornment position="start">

@@ -1,0 +1,14 @@
+.script-build:
+  script:
+    - apk add --no-cache bash
+    # GitLab SaaS runners may mount the checkout without allowing chmod.
+    # Invoking the wrapper through bash does not require the executable bit.
+    - bash ./gradlew --no-daemon testICP -PnoCoverage
+    - |
+      if grep -q '"testNames":\["' icp_server/target/rerun_test.json; then
+        echo "A suíte Ballerina registrou testes com falha."
+        cat icp_server/target/rerun_test.json
+        exit 1
+      fi
+    # Build the executable JAR after the tests for the Docker packaging job.
+    - bash ./gradlew --no-daemon buildICP

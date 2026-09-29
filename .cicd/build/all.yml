@@ -1,0 +1,4 @@
+include:
+  - local: .cicd/build/job.yml
+  - local: .cicd/build/script.yml
+  - local: .cicd/build/rules.yml

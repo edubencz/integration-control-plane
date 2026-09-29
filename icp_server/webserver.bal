@@ -166,15 +166,17 @@ function getContentType(string filePath) returns string {
 }
 
 // Update frontend config.json with runtime backend URLs
-function updateFrontendConfig() returns error? {
-    string configPath = "../www/config.json";
-
-    json configJson = {
+function buildFrontendConfig() returns map<json> {
+    return {
         "VITE_GRAPHQL_URL": backendGraphqlEndpoint,
         "VITE_AUTH_BASE_URL": backendAuthBaseUrl,
         "VITE_OBSERVABILITY_URL": backendObservabilityEndpoint,
         "VITE_WORKFLOW_URL": backendWorkflowEndpoint,
         "VITE_TRYIT_URL": backendTryitEndpoint,
+        "VITE_MI_APPLICATIONS_URL": backendMiApplicationsEndpoint,
+        "VITE_MI_SERVER_URL": backendMiServerEndpoint,
+        "VITE_MI_REGISTRY_URL": backendMiRegistryEndpoint,
+        "VITE_MI_DEPLOYMENTS_URL": backendMiDeploymentsEndpoint,
         "VITE_WS_URL": backendWsUrl,
         "VITE_SSO_ENABLED": ssoEnabled,
         "VITE_SSO_ISSUER": ssoIssuer,
@@ -182,7 +184,11 @@ function updateFrontendConfig() returns error? {
         "VITE_FEDERATED_ACCESS_CONTROL_ENABLED": federatedAccessControlEnabled,
         "VITE_ICP_VERSION": icpVersion
     };
+}
 
-    check io:fileWriteJson(configPath, configJson);
+function updateFrontendConfig() returns error? {
+    string configPath = "../www/config.json";
+
+    check io:fileWriteJson(configPath, buildFrontendConfig());
     log:printInfo("Updated frontend config.json with backend URLs");
 }

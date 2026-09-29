@@ -101,8 +101,18 @@ export function SubmitError({ message, onClear }: { message: string | null; onCl
 }
 
 /** A compact, theme-consistent expandable panel for revealing a JSON schema/payload. */
-export function SchemaDisclosure({ schema, label = 'Click to see Input Schema' }: { schema: string; label?: string }): JSX.Element {
-  const [open, setOpen] = useState(false);
+export function SchemaDisclosure({
+  schema,
+  label = 'Click to see Input Schema',
+  defaultOpen = false,
+}: {
+  schema: string;
+  label?: string;
+  /** Starts the panel expanded — for content the user asked for and should see immediately
+   * (e.g. a tool call's result), as opposed to input schemas that are opt-in detail. */
+  defaultOpen?: boolean;
+}): JSX.Element {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
       <Stack

@@ -15,8 +15,10 @@
 // under the License.
 
 import icp_server.auth;
+import icp_server.mi_management;
 import icp_server.storage;
 import icp_server.types;
+import icp_server.utils;
 
 import ballerina/http;
 import ballerina/log;
@@ -46,6 +48,13 @@ configurable boolean tryitProxyAllowInsecureTLS = false;
 
 // Request timeout (seconds) for calls to the target runtime.
 configurable decimal tryitProxyTimeout = 30;
+
+// MCP inbound SSE connections are held open indefinitely by design (the MI-side session lives as
+// long as the stream does), so they can't share tryitProxyTimeout's short synchronous-call budget.
+// This is instead a watchdog ceiling for the *whole* connection, to bound how long a client that
+// never sends a clean close (crashed tab, suspended laptop, dropped network) can keep the
+// corresponding upstream MI connection open. Default: 4 hours.
+configurable decimal mcpSseConnectionTimeout = 14400;
 
 const int TRYIT_CLIENT_CACHE_MAX_SIZE = 100;
 isolated map<http:Client> tryitClientCache = {};
@@ -106,6 +115,45 @@ isolated function tryitErrorResponse(int statusCode, string message) returns htt
     res.statusCode = statusCode;
     res.setJsonPayload({"error": {"message": message}});
     return res;
+}
+
+// Selects the public ingress-style endpoint without risking a duplicated mutating request.
+// The availability probe is a safe GET for the API's OpenAPI document; the caller's actual
+// request is forwarded exactly once after the endpoint has been selected.
+isolated function selectMiTryItBaseUrl(types:MiTryItTarget target, string apiName)
+        returns string {
+    string preferredBaseUrl = "https://" + target.host;
+    string advertisedBaseUrl = storage:tryitScheme(target.protocol) + "://" + target.host + ":" +
+        target.port.toString();
+
+    http:Client|error preferredClient = getTryitClient(preferredBaseUrl);
+    if preferredClient is error {
+        log:printDebug("MI Try-It HTTPS client creation failed; using advertised listener",
+            apiName = apiName, preferredBaseUrl = preferredBaseUrl, errorMessage = preferredClient.message(),
+            advertisedBaseUrl = advertisedBaseUrl);
+    } else {
+        http:Response|error probe = preferredClient->get(string `/${apiName}?swagger.json`);
+        if probe is http:Response {
+            // Drain the response so the cached connection can be reused.
+            string|error probePayload = probe.getTextPayload();
+            if probePayload is error {
+                log:printDebug("Failed to drain MI Try-It HTTPS endpoint probe response",
+                    apiName = apiName, preferredBaseUrl = preferredBaseUrl,
+                    errorMessage = probePayload.message());
+            }
+            if probe.statusCode >= 200 && probe.statusCode < 300 {
+                return preferredBaseUrl;
+            }
+            log:printDebug("MI Try-It HTTPS endpoint probe returned a non-success status; using advertised listener",
+                    apiName = apiName, preferredBaseUrl = preferredBaseUrl, statusCode = probe.statusCode,
+                    advertisedBaseUrl = advertisedBaseUrl);
+        } else {
+            log:printDebug("MI Try-It HTTPS endpoint probe failed; using advertised listener",
+                    apiName = apiName, preferredBaseUrl = preferredBaseUrl, errorMessage = probe.message(),
+                advertisedBaseUrl = advertisedBaseUrl);
+        }
+    }
+    return advertisedBaseUrl;
 }
 
 // Performs auth, runtime resolution, header rewrite and forwarding for one Try-It request;
@@ -188,6 +236,219 @@ function proxyTryItRequest(string componentId, string environmentId, string runt
     return upstream;
 }
 
+// MI counterpart of proxyTryItRequest. MI API listeners are resolved by API
+// name because they are not registered in the BI listener artifact table.
+function proxyMiTryItRequest(string componentId, string environmentId, string runtimeId,
+        string apiName, string[] restPath, http:Request req) returns http:Response {
+    string|http:HeaderNotFoundError authHeader = req.getHeader("Authorization");
+    if authHeader is http:HeaderNotFoundError {
+        return tryitErrorResponse(401, "Authorization header missing");
+    }
+    types:UserContextV2|error userContext = auth:extractUserContextV2(authHeader);
+    if userContext is error {
+        return tryitErrorResponse(401, "Invalid token: " + userContext.message());
+    }
+    string|error projectId = storage:getProjectIdByComponentId(componentId);
+    if projectId is error {
+        return tryitErrorResponse(404, "Component not found: " + componentId);
+    }
+    types:AccessScope scope = auth:buildAccessScope(projectId, componentId, environmentId);
+    boolean|error permitted = auth:hasAnyPermission(userContext.userId,
+            [auth:PERMISSION_INTEGRATION_EDIT, auth:PERMISSION_INTEGRATION_MANAGE], scope);
+    if permitted is error {
+        return tryitErrorResponse(500, "Authorization check failed: " + permitted.message());
+    }
+    if !permitted {
+        return tryitErrorResponse(403, "Access denied");
+    }
+
+    types:MiTryItTarget?|error target = storage:getMiTryItTarget(componentId, environmentId,
+        runtimeId, apiName);
+    if target is error {
+        return tryitErrorResponse(502, "Failed to resolve MI API: " + target.message());
+    }
+    if target is () {
+        return tryitErrorResponse(404, "No running MI API with that name was found for this component and environment");
+    }
+
+    string subPath = string:'join("/", ...restPath);
+    string rawPath = req.rawPath;
+    int? qIdx = rawPath.indexOf("?");
+    string query = qIdx is int ? rawPath.substring(qIdx) : "";
+    string context = target.context.startsWith("/") ? target.context : "/" + target.context;
+    string targetPath = context + (subPath == "" ? "" : (context.endsWith("/") ? subPath : "/" + subPath)) + query;
+
+    string|http:HeaderNotFoundError tryitHeaderName = req.getHeader("X-Tryit-Header-Name");
+    string|http:HeaderNotFoundError tryitHeaderValue = req.getHeader("X-Tryit-Header-Value");
+    req.removeHeader("X-Tryit-Header-Name");
+    req.removeHeader("X-Tryit-Header-Value");
+    req.removeHeader("Authorization");
+    if tryitHeaderName is string && tryitHeaderValue is string {
+        string trimmedName = tryitHeaderName.trim();
+        if trimmedName != "" && tryitHeaderValue != "" && BLOCKED_HEADER_NAMES.indexOf(trimmedName.toLowerAscii()) is () {
+            req.setHeader(trimmedName, tryitHeaderValue);
+        }
+    }
+
+    string baseUrl = selectMiTryItBaseUrl(target, apiName);
+    http:Client|error tryitClient = getTryitClient(baseUrl);
+    if tryitClient is error {
+        return tryitErrorResponse(502, "Failed to connect to MI runtime: " + tryitClient.message());
+    }
+    http:Response|error upstream = tryitClient->forward(targetPath, req);
+    if upstream is error {
+        log:printError("MI Try-It proxy forward failed", upstream, targetPath = targetPath, baseUrl = baseUrl);
+        return tryitErrorResponse(502, "MI API request failed: " + upstream.message());
+    }
+    return upstream;
+}
+
+// Resolves an MI inbound endpoint target for MCP server testing. Gets the runtime hostname from
+// storage (ownership check), fetches the inbound's XML source, parses port/context, and returns
+// the full target URL information. Returns null if the inbound doesn't exist or isn't running.
+isolated function getMiInboundTryItTarget(string componentId, string environmentId, string runtimeId,
+        string inboundName) returns types:MiTryItTarget?|error {
+    string?|error host = storage:getMiInboundForTryIt(componentId, environmentId, runtimeId, inboundName);
+    if host is error {
+        return host;
+    }
+    if host is () {
+        return ();
+    }
+
+    // Get the inbound's XML source to extract port and context. Need to create management client
+    // and HMAC token. Following the pattern from graphql_api.bal's artifactSource resolver.
+    types:Component? component = check storage:getComponentById(componentId);
+    if component is () {
+        return error("Component not found: " + componentId);
+    }
+
+    types:Runtime[] runtimes = check storage:getRuntimes((), (), environmentId, component.projectId, componentId);
+    types:Runtime runtime = check utils:selectRuntime(runtimes, componentId, environmentId, runtimeId);
+
+    string baseUrl = check storage:buildManagementBaseUrl(runtime.managementHostname, runtime.managementPort);
+    http:Client|error mgmtClient = artifactsApiAllowInsecureTLS
+        ? new (baseUrl, {secureSocket: {enable: false}})
+        : new (baseUrl);
+    if mgmtClient is error {
+        return error("Failed to create MI management API client: " + mgmtClient.message());
+    }
+
+    string|error hmacTokenResult = storage:issueRuntimeHmacToken(runtimeId);
+    if hmacTokenResult is error {
+        return error("Failed to issue HMAC token for runtime: " + hmacTokenResult.message());
+    }
+
+    string|error artifactXml = mi_management:getArtifactSource(
+        mgmtClient, hmacTokenResult, "inbound-endpoint", inboundName);
+    if artifactXml is error {
+        return error("Failed to fetch inbound XML: " + artifactXml.message());
+    }
+
+    // Parse the inbound XML to extract port and context
+    record {|string? port; string? context;|}|() parsed = storage:parseMcpInboundNetworkConfig(artifactXml);
+    if parsed is () {
+        return error("Failed to parse inbound network configuration from XML");
+    }
+
+    string? portStr = parsed.port;
+    if portStr is () {
+        return error("Inbound port not found in configuration (expected inbound.http.port or inbound.mcp.port)");
+    }
+
+    int port = check int:fromString(portStr);
+    if port < 1 || port > 65535 {
+        return error("Invalid inbound port number: " + portStr);
+    }
+
+    string context = parsed.context ?: "/mcp";
+    if !context.startsWith("/") {
+        context = "/" + context;
+    }
+
+    // MCP inbounds use HTTP (not HTTPS from the internal port perspective)
+    string protocol = "http";
+
+    return {host, protocol, port, context};
+}
+
+// Proxies a POST request to an MI inbound endpoint (for JSON-RPC calls like initialize, tools/list, etc.).
+// Similar to proxyMiTryItRequest but for inbounds instead of APIs.
+function proxyMiInboundRequest(string componentId, string environmentId, string runtimeId,
+        string inboundName, string[] restPath, http:Request req) returns http:Response {
+    string|http:HeaderNotFoundError requestedPort = req.getHeader("X-MCP-Target-Port");
+    if requestedPort is string && requestedPort != "443" {
+        return tryitErrorResponse(400, "Unsupported MCP target port; only the artifact port or 443 is allowed");
+    }
+    string|http:HeaderNotFoundError authHeader = req.getHeader("Authorization");
+    if authHeader is http:HeaderNotFoundError {
+        return tryitErrorResponse(401, "Authorization header missing");
+    }
+    types:UserContextV2|error userContext = auth:extractUserContextV2(authHeader);
+    if userContext is error {
+        return tryitErrorResponse(401, "Invalid token: " + userContext.message());
+    }
+    string|error projectId = storage:getProjectIdByComponentId(componentId);
+    if projectId is error {
+        return tryitErrorResponse(404, "Component not found: " + componentId);
+    }
+    types:AccessScope scope = auth:buildAccessScope(projectId, componentId, environmentId);
+    boolean|error permitted = auth:hasAnyPermission(userContext.userId,
+            [auth:PERMISSION_INTEGRATION_EDIT, auth:PERMISSION_INTEGRATION_MANAGE], scope);
+    if permitted is error {
+        return tryitErrorResponse(500, "Authorization check failed: " + permitted.message());
+    }
+    if !permitted {
+        return tryitErrorResponse(403, "Access denied");
+    }
+
+    types:MiTryItTarget?|error target = getMiInboundTryItTarget(componentId, environmentId,
+        runtimeId, inboundName);
+    if target is error {
+        return tryitErrorResponse(502, "Failed to resolve MI inbound: " + target.message());
+    }
+    if target is () {
+        return tryitErrorResponse(404, "No running MI inbound endpoint with that name was found for this component and environment");
+    }
+
+    types:MiTryItTarget resolvedTarget = target;
+    if requestedPort is string {
+        resolvedTarget = {host: resolvedTarget.host, protocol: "https", port: 443, context: resolvedTarget.context};
+    }
+
+    string subPath = string:'join("/", ...restPath);
+    string rawPath = req.rawPath;
+    int? qIdx = rawPath.indexOf("?");
+    string query = qIdx is int ? rawPath.substring(qIdx) : "";
+    string context = resolvedTarget.context.startsWith("/") ? resolvedTarget.context : "/" + resolvedTarget.context;
+    string targetPath = context + (subPath == "" ? "" : (context.endsWith("/") ? subPath : "/" + subPath)) + query;
+
+    string|http:HeaderNotFoundError tryitHeaderName = req.getHeader("X-Tryit-Header-Name");
+    string|http:HeaderNotFoundError tryitHeaderValue = req.getHeader("X-Tryit-Header-Value");
+    req.removeHeader("X-Tryit-Header-Name");
+    req.removeHeader("X-Tryit-Header-Value");
+    req.removeHeader("X-MCP-Target-Port");
+    req.removeHeader("Authorization");
+    if tryitHeaderName is string && tryitHeaderValue is string {
+        string trimmedName = tryitHeaderName.trim();
+        if trimmedName != "" && tryitHeaderValue != "" && BLOCKED_HEADER_NAMES.indexOf(trimmedName.toLowerAscii()) is () {
+            req.setHeader(trimmedName, tryitHeaderValue);
+        }
+    }
+
+    string baseUrl = storage:tryitScheme(resolvedTarget.protocol) + "://" + resolvedTarget.host + ":" + resolvedTarget.port.toString();
+    http:Client|error tryitClient = getTryitClient(baseUrl);
+    if tryitClient is error {
+        return tryitErrorResponse(502, "Failed to connect to MI inbound: " + tryitClient.message());
+    }
+    http:Response|error upstream = tryitClient->forward(targetPath, req);
+    if upstream is error {
+        log:printError("MI inbound Try-It proxy forward failed", upstream, targetPath = targetPath, baseUrl = baseUrl);
+        return tryitErrorResponse(502, "MI inbound request failed: " + upstream.message());
+    }
+    return upstream;
+}
+
 @http:ServiceConfig {
     auth: [
         {
@@ -202,7 +463,7 @@ function proxyTryItRequest(string componentId, string environmentId, string runt
     ],
     cors: {
         allowOrigins: normalizedCorsAllowedOrigins,
-        allowHeaders: ["Content-Type", "Authorization", "X-Tryit-Header-Name", "X-Tryit-Header-Value"]
+        allowHeaders: ["Content-Type", "Authorization", "X-Tryit-Header-Name", "X-Tryit-Header-Value", "X-MCP-Target-Port"]
     }
 }
 service /icp/tryit on httpListener {
@@ -213,6 +474,54 @@ service /icp/tryit on httpListener {
 
     // Explicit per-method accessors (not 'default) so CORS preflight OPTIONS is auto-handled by
     // the listener and not subjected to service auth — same reasoning as workflow_proxy_service.
+
+    resource function get mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, [], req));
+    }
+
+    resource function get mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, restPath, req));
+    }
+
+    resource function post mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, [], req));
+    }
+
+    resource function post mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, restPath, req));
+    }
+
+    resource function put mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, [], req));
+    }
+
+    resource function put mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, restPath, req));
+    }
+
+    resource function patch mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, [], req));
+    }
+
+    resource function patch mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, restPath, req));
+    }
+
+    resource function delete mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, [], req));
+    }
+
+    resource function delete mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, restPath, req));
+    }
+
+    resource function head mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, [], req));
+    }
+
+    resource function head mi/[string componentId]/[string environmentId]/[string runtimeId]/[string apiName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiTryItRequest(componentId, environmentId, runtimeId, apiName, restPath, req));
+    }
 
     resource function get [string componentId]/[string environmentId]/[string runtimeId]/[int port]/[string... restPath](http:Caller caller, http:Request req) returns error? {
         check caller->respond(proxyTryItRequest(componentId, environmentId, runtimeId, port, restPath, req));
@@ -237,4 +546,116 @@ service /icp/tryit on httpListener {
     resource function head [string componentId]/[string environmentId]/[string runtimeId]/[int port]/[string... restPath](http:Caller caller, http:Request req) returns error? {
         check caller->respond(proxyTryItRequest(componentId, environmentId, runtimeId, port, restPath, req));
     }
+
+    // MI inbound endpoints (MCP servers). These are keyed by inbound name instead of port
+    // since inbound configuration is not registered in the artifact table, but derived from
+    // the inbound's XML source.
+
+    resource function post 'mi\-inbound/[string componentId]/[string environmentId]/[string runtimeId]/[string inboundName](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiInboundRequest(componentId, environmentId, runtimeId, inboundName, [], req));
+    }
+
+    resource function post 'mi\-inbound/[string componentId]/[string environmentId]/[string runtimeId]/[string inboundName]/[string... restPath](http:Caller caller, http:Request req) returns error? {
+        check caller->respond(proxyMiInboundRequest(componentId, environmentId, runtimeId, inboundName, restPath, req));
+    }
+
+    // SSE streaming endpoint for MCP server connections. Opens a dedicated (non-cached, long-lived)
+    // client to the resolved MI inbound and passes the upstream byte stream straight through to the
+    // caller as it arrives, rather than buffering the whole (never-ending) response — see
+    // mcpSseConnectionTimeout's doc comment for why this can't reuse tryitClientCache/forward().
+    resource function get 'mi\-inbound\-sse/[string componentId]/[string environmentId]/[string runtimeId]/[string inboundName](http:Caller caller, http:Request req) returns error? {
+        string|http:HeaderNotFoundError requestedPort = req.getHeader("X-MCP-Target-Port");
+        if requestedPort is string && requestedPort != "443" {
+            check caller->respond(tryitErrorResponse(400, "Unsupported MCP target port; only the artifact port or 443 is allowed"));
+            return;
+        }
+        string|http:HeaderNotFoundError authHeader = req.getHeader("Authorization");
+        if authHeader is http:HeaderNotFoundError {
+            check caller->respond(tryitErrorResponse(401, "Authorization header missing"));
+            return;
+        }
+        types:UserContextV2|error userContext = auth:extractUserContextV2(authHeader);
+        if userContext is error {
+            check caller->respond(tryitErrorResponse(401, "Invalid token: " + userContext.message()));
+            return;
+        }
+        string|error projectId = storage:getProjectIdByComponentId(componentId);
+        if projectId is error {
+            check caller->respond(tryitErrorResponse(404, "Component not found: " + componentId));
+            return;
+        }
+        types:AccessScope scope = auth:buildAccessScope(projectId, componentId, environmentId);
+        boolean|error permitted = auth:hasAnyPermission(userContext.userId,
+                [auth:PERMISSION_INTEGRATION_EDIT, auth:PERMISSION_INTEGRATION_MANAGE], scope);
+        if permitted is error {
+            check caller->respond(tryitErrorResponse(500, "Authorization check failed: " + permitted.message()));
+            return;
+        }
+        if !permitted {
+            check caller->respond(tryitErrorResponse(403, "Access denied"));
+            return;
+        }
+
+        types:MiTryItTarget?|error target = getMiInboundTryItTarget(componentId, environmentId, runtimeId, inboundName);
+        if target is error {
+            check caller->respond(tryitErrorResponse(502, "Failed to resolve MI inbound: " + target.message()));
+            return;
+        }
+        if target is () {
+            check caller->respond(tryitErrorResponse(404,
+                "No running MI inbound endpoint with that name was found for this component and environment"));
+            return;
+        }
+
+        types:MiTryItTarget resolvedTarget = target;
+        if requestedPort is string {
+            resolvedTarget = {host: resolvedTarget.host, protocol: "https", port: 443, context: resolvedTarget.context};
+        }
+
+        string baseUrl = storage:tryitScheme(resolvedTarget.protocol) + "://" + resolvedTarget.host + ":" + resolvedTarget.port.toString();
+        http:ClientConfiguration sseConfig = {timeout: mcpSseConnectionTimeout};
+        if baseUrl.startsWith("https") && tryitProxyAllowInsecureTLS {
+            sseConfig.secureSocket = {enable: false};
+        }
+        http:Client|error sseClient = new (baseUrl, sseConfig);
+        if sseClient is error {
+            check caller->respond(tryitErrorResponse(502, "Failed to connect to MI inbound: " + sseClient.message()));
+            return;
+        }
+
+        string context = resolvedTarget.context.startsWith("/") ? resolvedTarget.context : "/" + resolvedTarget.context;
+        map<string|string[]> upstreamHeaders = {
+            "Accept": "text/event-stream",
+            "Cache-Control": "no-cache"
+        };
+
+        http:Response|error upstream = sseClient->get(context, upstreamHeaders);
+        if upstream is error {
+            log:printError("MI inbound SSE connection failed", upstream, context = context, baseUrl = baseUrl);
+            check caller->respond(tryitErrorResponse(502, "Failed to connect to MCP SSE endpoint: " + upstream.message()));
+            return;
+        }
+        if upstream.statusCode != 200 {
+            check caller->respond(tryitErrorResponse(upstream.statusCode,
+                "MCP SSE endpoint returned status " + upstream.statusCode.toString()));
+            return;
+        }
+
+        // Deliberately not upstream.getByteStream(): its default 8192-byte read buffer holds back
+        // each small SSE frame (e.g. the initial `event: endpoint` line) until enough bytes pile up
+        // to fill it, which never happens on a keep-alive stream — the browser would see nothing
+        // and eventually time out waiting for the sessionId. getSseEventStream() parses framing
+        // internally on a 1-byte read buffer instead, so each event is available as soon as it
+        // arrives on the wire.
+        stream<http:SseEvent, error?>|http:ClientError eventStream = upstream.getSseEventStream();
+        if eventStream is http:ClientError {
+            check caller->respond(tryitErrorResponse(502, "Failed to read MCP SSE stream: " + eventStream.message()));
+            return;
+        }
+
+        http:Response res = new;
+        res.setSseEventStream(eventStream);
+        check caller->respond(res);
+    }
+
 }

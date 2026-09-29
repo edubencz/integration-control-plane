@@ -39,7 +39,8 @@ Edit `public/config.json` (or `dist/config.json` after build):
 {
   "VITE_GRAPHQL_URL": "https://localhost:9446/graphql",
   "VITE_AUTH_BASE_URL": "https://localhost:9446/auth",
-  "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability"
+  "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability",
+  "VITE_MI_DEPLOYMENTS_URL": "https://localhost:9446/icp/mi_deployments"
 }
 ```
 
@@ -79,7 +80,8 @@ cat > /usr/share/nginx/html/config.json <<EOF
 {
   "VITE_GRAPHQL_URL": "${GRAPHQL_URL}",
   "VITE_AUTH_BASE_URL": "${AUTH_BASE_URL}",
-  "VITE_LOGS_URL": "${LOGS_URL}"
+  "VITE_LOGS_URL": "${LOGS_URL}",
+  "VITE_MI_DEPLOYMENTS_URL": "${MI_DEPLOYMENTS_URL}"
 }
 EOF
 nginx -g 'daemon off;'

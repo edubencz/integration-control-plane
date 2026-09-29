@@ -1,165 +1,193 @@
-# WSO2 Integration Control Plane
+# NEXDOM Integration Control Plane
 
-Monitor, troubleshoot, and control integration deployments with a modern GraphQL API and real-time observability.
+Monitore, diagnostique e controle implantações de integração por meio de uma API GraphQL moderna e observabilidade em tempo real.
 
-## Architecture
+## Arquitetura
 
-The Integration Control Plane consists of:
+O Integration Control Plane é composto por:
 
-- **Backend (ICP Server)**: Ballerina-based GraphQL API service with authentication, runtime management, and observability
-- **Frontend**: Modern React + TypeScript application with Vite and Oxygen UI components
-- **Database Support**: MySQL, PostgreSQL, Microsoft SQL Server, or H2 (in-memory)
+- **Backend (servidor ICP)**: serviço de API GraphQL desenvolvido em Ballerina, com autenticação, gerenciamento de runtimes e observabilidade;
+- **Frontend**: aplicação moderna em React e TypeScript, construída com Vite e componentes Oxygen UI;
+- **Bancos de dados compatíveis**: MySQL, PostgreSQL, Microsoft SQL Server e H2 (em memória).
 
-## Quick Start
+## Início rápido
 
-### Prerequisites
+### Pré-requisitos
 
-- **Java 17+** (for Gradle)
-- **Ballerina** (latest stable version)
-- **Node.js 20+** and **pnpm 10+**
-- **Docker & Docker Compose** (recommended for local development)
+- **Java 17 ou superior** (para o Gradle);
+- **Ballerina** (versão estável mais recente);
+- **Node.js 20 ou superior** e **pnpm 10 ou superior**;
+- **Docker e Docker Compose** (recomendados para o desenvolvimento local).
 
-### Running with Docker Compose
+### Execução com Docker Compose
 
-The easiest way to get started is using Docker Compose, which sets up the complete stack:
+O arquivo [`docker/docker-compose.yaml`](docker/docker-compose.yaml) compila a aplicação diretamente a partir deste repositório e inicia todo o ambiente local:
+
+- **nexdom-icp**: backend do NEXDOM ICP e frontend de produção;
+- **postgres**: banco de dados PostgreSQL 16;
+- **migrations**: migrations do banco para as funcionalidades Audit Logs e Deployments.
+
+Na raiz do projeto, execute:
 
 ```bash
-# With MySQL database
-docker-compose -f icp_server/docker-compose.mysql.yml up --build
-
-# With PostgreSQL database
-docker-compose -f icp_server/docker-compose.postgresql.yml up --build
-
-# With MSSQL database
-docker-compose -f icp_server/docker-compose.mssql.yml up --build
+docker compose -f docker/docker-compose.yaml up -d --build
 ```
 
-The services will be available at:
+Acompanhe os logs da aplicação:
 
-- **Frontend**: http://localhost:5173
-- **GraphQL API**: https://localhost:9446/graphql
-- **Authentication API**: https://localhost:9446/auth
-- **Observability API**: https://localhost:9446/icp/observability
+```bash
+docker compose -f docker/docker-compose.yaml logs -f nexdom-icp
+```
 
-Default credentials: `admin` / `admin`
+Confira o estado de todos os serviços:
 
-## Building from Source
+```bash
+docker compose -f docker/docker-compose.yaml ps
+```
 
-### Complete Build
+A aplicação estará disponível nos seguintes endereços:
 
-Build the entire project using Gradle:
+- **Console**: https://localhost:9446
+- **API GraphQL**: https://localhost:9446/graphql
+- **API de autenticação**: https://localhost:9446/auth
+- **API de observabilidade**: https://localhost:9446/icp/observability
+- **Serviço de runtime**: https://localhost:9445
+- **Adaptador do OpenSearch**: https://localhost:9449
+
+Credenciais padrão: `admin` / `admin`.
+
+Para encerrar o ambiente preservando o volume de dados do PostgreSQL:
+
+```bash
+docker compose -f docker/docker-compose.yaml down
+```
+
+Para excluir também o banco local e recriá-lo pelos scripts de inicialização na próxima execução:
+
+```bash
+docker compose -f docker/docker-compose.yaml down -v
+```
+
+> **Atenção:** a opção `-v` remove permanentemente o volume local de dados do PostgreSQL.
+
+## Compilação a partir do código-fonte
+
+### Compilação completa
+
+Compile todo o projeto com o Gradle:
 
 ```bash
 ./gradlew build
 ```
 
-Or use the build script:
+Ou utilize o script de compilação:
 
 ```bash
 ./build.sh
 ```
 
-The distribution package will be created as:
+O arquivo ZIP da distribuição será criado em:
 
 ```text
-build/distribution/wso2-integration-control-plane-<version>.zip
+build/distribution/
 ```
 
-### Running the Distribution
+### Execução da distribuição
 
-After building, extract and run the packaged distribution:
+Após a compilação, extraia e execute a distribuição empacotada:
 
 ```bash
-# Extract the distribution
-unzip build/distribution/wso2-integration-control-plane-<version>.zip -d build/distribution
+# Extrai a distribuição
+unzip build/distribution/*integration-control-plane-<versao>.zip -d build/distribution
 
-# Navigate to the bin directory
-cd build/distribution/wso2-integration-control-plane-<version>/bin
+# Acessa o diretório bin
+cd build/distribution/*integration-control-plane-<versao>/bin
 
-# Start the server
-./icp.sh    # Linux/macOS
+# Inicia o servidor
+./icp.sh   # Linux/macOS
 icp.bat    # Windows
 ```
 
-## Development Setup
+## Configuração do ambiente de desenvolvimento
 
-### Backend Development
+### Desenvolvimento do backend
 
-Navigate to the backend directory:
+Acesse o diretório do backend:
 
 ```bash
 cd icp_server
 ```
 
-#### Using Docker Compose (Recommended)
+#### Uso do Docker Compose (recomendado)
 
 ```bash
-# Start with local configuration (H2 database)
-docker-compose -f docker-compose.local.yml up --build
+# Inicia com a configuração local e o banco H2
+docker compose -f docker-compose.local.yml up --build
 
-# Start with MySQL
-docker-compose -f docker-compose.mysql.yml up --build
+# Inicia com MySQL
+docker compose -f docker-compose.mysql.yml up --build
 
-# Start with observability stack (Prometheus, Grafana)
-docker-compose -f docker-compose.observability.yml up --build
+# Inicia a estrutura de observabilidade com Prometheus e Grafana
+docker compose -f docker-compose.observability.yml up --build
 ```
 
-#### Running Locally with Ballerina
+#### Execução local com Ballerina
 
-1. Configure the database in `icp_server/Config.toml`
-2. Run the service:
+1. Configure o banco de dados em `icp_server/Config.toml`.
+2. Execute o serviço:
 
 ```bash
 bal run
 ```
 
-The server will start on port 9446
+O servidor será iniciado na porta 9446.
 
-### Frontend Development
+### Desenvolvimento do frontend
 
-Navigate to the frontend directory:
+Acesse o diretório do frontend:
 
 ```bash
 cd frontend
 ```
 
-#### Install Dependencies
+#### Instalação das dependências
 
 ```bash
 pnpm install
 ```
 
-#### Configure Backend URLs
+#### Configuração das URLs do backend
 
-Edit `frontend/public/config.json`:
+Edite o arquivo `frontend/public/config.json`:
 
 ```json
 {
   "VITE_GRAPHQL_URL": "https://localhost:9446/graphql",
   "VITE_AUTH_BASE_URL": "https://localhost:9446/auth",
-  "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability"
+  "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability",
+  "VITE_MI_DEPLOYMENTS_URL": "https://localhost:9446/icp/mi_deployments"
 }
 ```
 
-#### Start Development Server
+#### Inicialização do servidor de desenvolvimento
 
 ```bash
 pnpm dev
 ```
 
-The frontend will be available at http://localhost:5173
+O frontend estará disponível em http://localhost:5173.
 
-#### Build for Production
+#### Compilação para produção
 
 ```bash
 pnpm build
 ```
 
-The production build will be in `frontend/dist/`
+O resultado da compilação de produção ficará em `frontend/dist/`.
 
-## Database Configuration
+## Configuração do banco de dados
 
-The ICP Server supports multiple database backends:
+O servidor ICP é compatível com diferentes bancos de dados.
 
 ### MySQL
 
@@ -198,85 +226,76 @@ username = "SA"
 password = "YourStrong@Passw0rd"
 ```
 
-### H2 (In-Memory)
+### H2 (em memória)
 
 ```toml
 [icp_server.storage]
 dbType = "h2"
 ```
 
-## Testing
+## Testes
 
-### Backend Tests
+### Testes do backend
 
 ```bash
-# Self-contained: seeds H2 test databases, then runs `bal test` with coverage
+# Prepara os bancos H2 de teste e executa `bal test` com cobertura
 ./gradlew testICP
 ```
 
-### Frontend Tests
+### Testes do frontend
 
 ```bash
 cd frontend
 pnpm test
 ```
 
-## Authentication
+## Autenticação
 
-The ICP supports multiple authentication methods:
+O NEXDOM ICP aceita diferentes métodos de autenticação:
 
-- **Default User Backend**: Built-in user management with JWT tokens
-- **Custom Auth Backend**: Integration with external OAuth2/OIDC providers
-- **LDAP**: Enterprise directory integration
+- **Backend de usuários padrão**: gerenciamento integrado de usuários com tokens JWT;
+- **Backend de autenticação personalizado**: integração com provedores externos OAuth2/OIDC;
+- **LDAP**: integração com diretórios corporativos.
 
-See [icp_server/custom_auth/AUTH_BACKEND_IMPLEMENTATION.md](icp_server/custom_auth/AUTH_BACKEND_IMPLEMENTATION.md) for details.
+Consulte [icp_server/custom_auth/AUTH_BACKEND_IMPLEMENTATION.md](icp_server/custom_auth/AUTH_BACKEND_IMPLEMENTATION.md) para obter mais detalhes.
 
-## Observability
+## Observabilidade
 
-The ICP Server integrates with:
+O servidor ICP integra-se com:
 
-- **OpenSearch**: For log aggregation and search
-- **Prometheus**: For metrics collection
-- **Grafana**: For visualization
+- **OpenSearch**: agregação e pesquisa de logs;
+- **Prometheus**: coleta de métricas;
+- **Grafana**: visualização de dados.
 
-Start the observability stack:
+Inicie a estrutura de observabilidade:
 
 ```bash
 cd icp_server
-docker-compose -f docker-compose.observability.yml up
+docker compose -f docker-compose.observability.yml up
 ```
 
-## Documentation
+## Documentação
 
-- [Backend Documentation](icp_server/README.md)
-- [Frontend Documentation](frontend/README.md)
-- [Runtime Configuration](frontend/RUNTIME_CONFIG.md)
-- [RBAC v2 Implementation](icp_server/rbac_v2_implementation.md)
-- [Kubernetes Deployment](kubernetes/SETUP.md)
+- [Documentação do backend](icp_server/README.md)
+- [Documentação do frontend](frontend/README.md)
+- [Configuração do runtime](frontend/RUNTIME_CONFIG.md)
+- [Implementação do RBAC v2](icp_server/rbac_v2_implementation.md)
 
-## Project Structure
+## Estrutura do projeto
 
-```
+```text
 integration-control-plane/
-├── icp_server/              # Ballerina backend service
-│   ├── modules/             # Ballerina modules (auth, storage, observability)
-│   ├── tests/               # Backend tests
-│   ├── database/            # Database schemas and migrations
-│   └── docker-compose.*.yml # Docker Compose configurations
-├── frontend/                # React TypeScript frontend
-│   ├── src/                 # Source code
-│   ├── public/              # Static assets and runtime config
-│   └── dist/                # Production build output
-├── distribution/            # Distribution scripts
-├── kubernetes/              # Kubernetes deployment manifests
-└── build.gradle             # Gradle build configuration
+├── icp_server/              # Serviço de backend em Ballerina
+│   ├── modules/             # Módulos Ballerina: autenticação, armazenamento e observabilidade
+│   ├── tests/               # Testes do backend
+│   ├── database/            # Esquemas e migrations do banco de dados
+│   └── docker-compose.*.yml # Configurações do Docker Compose do backend
+├── docker/                  # Dockerfiles e Compose do ambiente principal
+├── frontend/                # Frontend em React e TypeScript
+│   ├── src/                 # Código-fonte
+│   ├── public/              # Arquivos estáticos e configuração de runtime
+│   └── dist/                # Saída da compilação de produção
+├── distribution/            # Scripts de empacotamento da distribuição
+├── k8s/              # Manifestos de implantação no Kubernetes
+└── build.gradle             # Configuração de compilação do Gradle
 ```
-
-## License
-
-This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
-
-## Support
-
-- [Issue Tracker](https://github.com/wso2/integration-control-plane/issues)
-- [WSO2 Support](https://wso2.com/support/)

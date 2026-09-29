@@ -37,8 +37,7 @@ import {
   List,
   ListItem,
   ListItemText,
-  MenuItem,
-  Select,
+  Skeleton,
   Snackbar,
   Alert,
   Stack,
@@ -46,24 +45,32 @@ import {
   Checkbox,
   Tooltip,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@wso2/oxygen-ui';
 import { RefreshCw, ListFilter, LayoutGrid, Server, Settings, Play, Square, Plus, X, Trash2, UserPlus, Code, Sliders, Link as LinkIcon, FileText, BookOpen, Package, Tag, FlaskConical, Layers } from '@wso2/oxygen-ui-icons-react';
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { useArtifacts, useRefreshEnvironmentArtifacts, useComponentRuntimes, type GqlArtifact, type GqlEnvironment } from '../api/queries';
+import { useArtifacts, useArtifactSource, useRefreshEnvironmentArtifacts, useComponentRuntimes, type GqlArtifact, type GqlEnvironment } from '../api/queries';
 import { useUpdateArtifactTracingStatus, useUpdateArtifactStatisticsStatus } from '../api/artifactToggleMutations';
 import { useUpdateArtifactStatus, useUpdateListenerState, useTriggerTask } from '../api/mutations';
 import { useListMiUsers, useCreateMiUser, useDeleteMiUser } from '../api/miUsers';
 import { ArtifactApiDefinition, ServiceResources, ServiceListeners, AutomationExecutions, ProxyApiReference } from './ArtifactTabs';
+import { McpToolsPanel } from './mcp/McpToolsPanel';
+import { useMcpConfigEntry } from './mcp/useMcpServer';
+import { parseInboundNetworkConfig } from './mcp/parseMcpTools';
 import { StartWorkflowDialog, type Toast as WorkflowToast } from './workflow/AdminPortal';
 import WorkflowInstancesPanel from './workflow/WorkflowInstancesPanel';
 import { ArtifactTypeSelector } from './ArtifactDetail';
+import EntryPointPicker from './EntryPointPicker';
 import Authorized from './Authorized';
 import { Permissions } from '../constants/permissions';
 import { hasComponent, resourceUrl, useScope } from '../nav';
 import { isWorkflowIntegration } from '../constants/integrationTypes';
-import { ENTRY_POINT_CONFIG, ENTRY_POINT_DETAIL_TABS, type SelectedArtifact, type TabProps } from './artifact-config';
+import { useEntryPointSelection } from '../hooks/useEntryPointSelection';
+import { ENTRY_POINT_CONFIG, ENTRY_POINT_DETAIL_TABS, toEnabled, toEntryPointOption, type EntryPointOption, type SelectedArtifact, type TabProps } from './artifact-config';
+import { EntryTypeChip } from './EntryTypeChip';
 import SyncSwitch from './SyncSwitch';
 import CopyButton from './CopyButton';
 
@@ -72,19 +79,6 @@ import CopyButton from './CopyButton';
 // data is genuinely unchanged, which cascades through downstream useMemo/useEffect chains and can
 // trigger a render loop (e.g. EntryPointsList's onSelectionChange effect).
 const EMPTY_ARTIFACTS: GqlArtifact[] = [];
-
-function toEnabled(value: unknown) {
-  if (typeof value === 'boolean') return value;
-  const normalized = (value ?? '').toString().toLowerCase();
-  return normalized === 'enabled' || normalized === 'active' || normalized === 'true';
-}
-
-// Small colored tag identifying an entry point's artifact type (API, Proxy, Inbound, Task…) — used
-// in the MI entry point picker, where several artifact types are mixed into a single list.
-function EntryTypeChip({ cfg }: { cfg?: { label: string; color: string; bgColor: string } }) {
-  if (!cfg) return null;
-  return <Chip label={cfg.label} size="small" sx={{ bgcolor: cfg.bgColor, color: cfg.color, fontWeight: 700, fontSize: 11, minWidth: 60, justifyContent: 'center' }} />;
-}
 
 // swagger-ui-react is ~1.3MB gzipped - code-split it out of the main bundle since it's only
 // needed when a user actually opens the API docs drawer for a BI service.
@@ -152,6 +146,9 @@ function EntryPointDetail({ selected, onOpenDrawerTab }: { selected: SelectedArt
   const compositeApp = artifact.compositeApp?.toString();
   const artifactState = artifact.state?.toString();
   const overviewFields = (config?.overviewFields ?? '').split(', ').filter(Boolean);
+  // MI reports no protocol value for an MCP inbound in practice, so the overview's PROTOCOL cell
+  // is driven by the same LocalEntry match McpToolsPanel uses, not by artifact.protocol.
+  const { isMcp } = useMcpConfigEntry(artifact.name?.toString() ?? '', envId, componentId, artifactType === 'InboundEndpoint');
   const showTracingToggle = ['RestApi', 'ProxyService', 'InboundEndpoint'].includes(artifactType);
   const showParametersButton = artifactType === 'InboundEndpoint';
   const showWsdlButton = artifactType === 'ProxyService';
@@ -164,24 +161,43 @@ function EntryPointDetail({ selected, onOpenDrawerTab }: { selected: SelectedArt
   const hasRuntimes = artifact.runtimes && Array.isArray(artifact.runtimes) && artifact.runtimes.length > 0;
   const artifactRuntimes = (artifact.runtimes as Array<{ runtimeId: string; status: string }> | undefined) ?? [];
   const showApiDocsButton = artifactType === 'Service' && Boolean(hasRuntimes);
+  const showTestButton = artifactType === 'Service' || artifactType === 'RestApi';
   // A Service can have multiple runtime instances (e.g. one per environment/replica); they all
   // run the same deployed code, so any instance's packed OpenAPI docs are representative. Prefer
   // a RUNNING one so the "Try it out" requests in the drawer have somewhere to actually land.
   const apiDocsRuntimeId = artifactRuntimes.find((r) => r.status === 'RUNNING')?.runtimeId ?? artifactRuntimes[0]?.runtimeId;
+  const testRuntimeId = artifactRuntimes.find((r) => r.status === 'RUNNING')?.runtimeId;
+  const hasRunningRuntime = artifactRuntimes.some((r) => r.status === 'RUNNING');
   const [viewingApiDocs, setViewingApiDocs] = useState(false);
 
   // Track if any preceding controls are visible for proper divider placement
   const hasPrecedingControls = compositeApp || showStatusToggle || showStatusChip || showTracingToggle || showStatisticsToggle || showListenerToggle;
   const hasHeaderControls =
-    !!compositeApp || showStatusChip || showStatusToggle || showTracingToggle || showStatisticsToggle || showListenerToggle || showParametersButton || showWsdlButton || showTaskToggle || showTaskTrigger || (showApiDocsButton && !!apiDocsRuntimeId);
+    !!compositeApp ||
+    showStatusChip ||
+    showStatusToggle ||
+    showTracingToggle ||
+    showStatisticsToggle ||
+    showListenerToggle ||
+    showParametersButton ||
+    showWsdlButton ||
+    showTaskToggle ||
+    showTaskTrigger ||
+    (showApiDocsButton && !!apiDocsRuntimeId) ||
+    (showTestButton && !!testRuntimeId);
 
   const artifactName = artifactType === 'Automation' ? (artifact.packageName?.toString() ?? '') : (artifact.name?.toString() ?? '');
+  const testQueryParam = artifactType === 'RestApi' ? 'api' : 'service';
   const artifactKey = `${artifactType}-${artifactName}`;
   useEffect(() => {
     setTracingEnabled(toEnabled(artifact.tracing));
     setStatisticsEnabled(toEnabled(artifact.statistics));
-    setStatusEnabled(toEnabled(artifact.state));
-  }, [artifactKey, artifact.tracing, artifact.statistics, artifact.state]);
+    // MI reports no `state` for an MCP inbound in practice (mirrors the empty `protocol` handled
+    // above), which would otherwise show Status as off for an endpoint that's actually up — and
+    // clicking Enable on that false reading makes MI reject it for the port already being in use.
+    // A RUNNING runtime is the more reliable liveness signal for that case.
+    setStatusEnabled(artifact.state ? toEnabled(artifact.state) : isMcp && hasRunningRuntime);
+  }, [artifactKey, artifact.tracing, artifact.statistics, artifact.state, isMcp, hasRunningRuntime]);
 
   useEffect(() => {
     if (showListenerToggle && !pendingListenerAction) {
@@ -459,16 +475,20 @@ function EntryPointDetail({ selected, onOpenDrawerTab }: { selected: SelectedArt
                 View WSDL
               </Button>
             )}
-            {showApiDocsButton && apiDocsRuntimeId && (
+            {((showApiDocsButton && apiDocsRuntimeId) || (showTestButton && testRuntimeId)) && (
               <Stack direction="row" gap={1} sx={{ ml: 'auto' }}>
-                <Authorized permissions={[Permissions.INTEGRATION_EDIT, Permissions.INTEGRATION_MANAGE]}>
-                  <Button variant="outlined" size="small" startIcon={<FlaskConical size={14} />} onClick={() => navigate(`${resourceUrl(scope, 'test')}?service=${encodeURIComponent(artifactName)}&env=${encodeURIComponent(envId)}`)}>
-                    Test
+                {showTestButton && testRuntimeId && (
+                  <Authorized permissions={[Permissions.INTEGRATION_EDIT, Permissions.INTEGRATION_MANAGE]}>
+                    <Button variant="outlined" size="small" startIcon={<FlaskConical size={14} />} onClick={() => navigate(`${resourceUrl(scope, 'test')}?${testQueryParam}=${encodeURIComponent(artifactName)}&env=${encodeURIComponent(envId)}`)}>
+                      Test
+                    </Button>
+                  </Authorized>
+                )}
+                {showApiDocsButton && (
+                  <Button variant="contained" size="small" startIcon={<BookOpen size={14} />} onClick={() => setViewingApiDocs(true)}>
+                    View API Docs
                   </Button>
-                </Authorized>
-                <Button variant="contained" size="small" startIcon={<BookOpen size={14} />} onClick={() => setViewingApiDocs(true)}>
-                  View API Docs
-                </Button>
+                )}
               </Stack>
             )}
           </Stack>
@@ -491,7 +511,7 @@ function EntryPointDetail({ selected, onOpenDrawerTab }: { selected: SelectedArt
                   />
                 ) : (
                   <Typography variant="body2" sx={{ fontFamily: 'monospace', mt: 0.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {artifact[f] ? artifact[f].toString() : '—'}
+                    {f === 'protocol' && isMcp ? 'HTTP + SSE' : artifact[f] ? artifact[f].toString() : '—'}
                   </Typography>
                 )}
               </Box>
@@ -529,6 +549,10 @@ function EntryPointDetail({ selected, onOpenDrawerTab }: { selected: SelectedArt
             <AutomationExecutions {...tabProps} />
           </Box>
         )}
+        {/* Renders nothing for a regular Inbound — McpToolsPanel detects an MCP server itself
+            (by protocol / a matching LocalEntry) and owns its own padding, so it disappears
+            entirely rather than leaving a blank Box for the common case. */}
+        {artifactType === 'InboundEndpoint' && <McpToolsPanel {...tabProps} />}
       </Box>
       <Snackbar open={triggerSuccessMessage !== null} autoHideDuration={4000} onClose={() => setTriggerSuccessMessage(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         <Alert onClose={() => setTriggerSuccessMessage(null)} severity="success" sx={{ width: '100%' }}>
@@ -546,6 +570,45 @@ function EntryPointDetail({ selected, onOpenDrawerTab }: { selected: SelectedArt
         </Suspense>
       )}
     </>
+  );
+}
+
+/**
+ * Narrow-viewport fallback for the entry point picker — below `md`, the 300px master-detail
+ * column doesn't fit beside the detail panel, so this collapses to a searchable combobox instead
+ * (the same pattern already used for the API/service picker in TestConsole.tsx and the media type
+ * picker in RegistryBrowser.tsx).
+ */
+function EntryPointCombobox({ options, selectedKey, onSelect, label, isMI }: { options: EntryPointOption[]; selectedKey: string; onSelect: (key: string) => void; label: string; isMI: boolean }) {
+  const selected = options.find((o) => o.key === selectedKey) ?? null;
+  const groupTypes = new Set(options.map((o) => o.type));
+  return (
+    <Autocomplete
+      size="small"
+      options={options}
+      value={selected}
+      isOptionEqualToValue={(a, b) => a.key === b.key}
+      getOptionLabel={(o) => o.label}
+      groupBy={isMI && groupTypes.size > 1 ? (o) => ENTRY_POINT_CONFIG[o.type]?.label ?? o.type : undefined}
+      disableClearable={options.length > 0}
+      onChange={(_, v) => v && onSelect(v.key)}
+      renderOption={(props, o) => (
+        <Box component="li" {...props} key={o.key}>
+          <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+            {isMI && <EntryTypeChip cfg={ENTRY_POINT_CONFIG[o.type]} />}
+            <Stack sx={{ minWidth: 0 }}>
+              <Typography variant="body2">{o.label}</Typography>
+              {o.meta && (
+                <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
+                  {o.meta}
+                </Typography>
+              )}
+            </Stack>
+          </Stack>
+        </Box>
+      )}
+      renderInput={(params) => <TextField {...params} placeholder={`Select ${label.toLowerCase()}`} aria-label={label} />}
+    />
   );
 }
 
@@ -568,9 +631,10 @@ function EntryPointsList({
   onOpenDrawer: (a: GqlArtifact, type: string, envId: string, tab: string) => void;
   onSelectionChange?: (entry: { artifact: GqlArtifact; type: string } | null) => void;
 }) {
-  const [selectedKey, setSelectedKey] = useState('');
   const navigate = useNavigate();
   const scope = useScope();
+  const theme = useTheme();
+  const isNarrow = useMediaQuery(theme.breakpoints.down('md'));
   const isMI = componentType === 'MI';
   // Workflow definitions are shown for a Workflow integration and no other type. Its BI runtime also
   // reports the service and listener artifacts that host the workflow engine, but those are
@@ -588,38 +652,47 @@ function EntryPointsList({
 
   const isLoading = isMI ? loadingApis || loadingProxies || loadingInbound || loadingTasks : workflowOnly ? loadingWorkflows : loadingServices || loadingAutomations;
 
-  const allEntryPoints = useMemo(
-    () =>
-      isMI
-        ? [...apis.map((a) => ({ artifact: a, type: 'RestApi' })), ...proxies.map((a) => ({ artifact: a, type: 'ProxyService' })), ...inboundEps.map((a) => ({ artifact: a, type: 'InboundEndpoint' })), ...tasks.map((a) => ({ artifact: a, type: 'Task' }))]
-        : workflowOnly
-          ? workflows.map((a) => ({ artifact: a, type: 'Workflow' }))
-          : [...services.map((a) => ({ artifact: a, type: 'Service' })), ...automations.map((a) => ({ artifact: a, type: 'Automation' }))],
-    [isMI, workflowOnly, apis, proxies, inboundEps, tasks, services, workflows, automations],
-  );
+  const { options: allEntryPoints, keys: allKeys, firstKey } = useMemo(() => {
+    const options: EntryPointOption[] = isMI
+      ? [
+          ...apis.map((a) => toEntryPointOption(a, 'RestApi')),
+          ...proxies.map((a) => toEntryPointOption(a, 'ProxyService')),
+          ...inboundEps.map((a) => toEntryPointOption(a, 'InboundEndpoint')),
+          ...tasks.map((a) => toEntryPointOption(a, 'Task')),
+        ]
+      : workflowOnly
+        ? workflows.map((a) => toEntryPointOption(a, 'Workflow'))
+        : [...services.map((a) => toEntryPointOption(a, 'Service')), ...automations.map((a) => toEntryPointOption(a, 'Automation'))];
+    return { options, keys: new Set(options.map((o) => o.key)), firstKey: options[0]?.key ?? '' };
+  }, [isMI, workflowOnly, apis, proxies, inboundEps, tasks, services, workflows, automations]);
 
-  const allKeys = new Set(
-    allEntryPoints.map(({ artifact: a, type }) => {
-      const artifactKey = type === 'Automation' ? a.packageName : a.name;
-      return `${type}::${artifactKey}`;
-    }),
-  );
-  const firstKey = allEntryPoints.length > 0 ? `${allEntryPoints[0].type}::${allEntryPoints[0].type === 'Automation' ? allEntryPoints[0].artifact.packageName : allEntryPoints[0].artifact.name}` : '';
-  const activeKey = selectedKey && allKeys.has(selectedKey) ? selectedKey : firstKey;
-  const selectedEntry = useMemo(
-    () =>
-      allEntryPoints.find(({ artifact: a, type }) => {
-        const artifactKey = type === 'Automation' ? a.packageName : a.name;
-        return `${type}::${artifactKey}` === activeKey;
-      }),
-    [allEntryPoints, activeKey],
-  );
+  const [activeKey, setSelectedKey] = useEntryPointSelection(envId, firstKey, allKeys);
+  const selectedEntry = useMemo(() => allEntryPoints.find((o) => o.key === activeKey), [allEntryPoints, activeKey]);
 
   useEffect(() => {
     onSelectionChange?.(selectedEntry ? { artifact: selectedEntry.artifact, type: selectedEntry.type } : null);
   }, [selectedEntry, onSelectionChange]);
 
-  if (isLoading) return <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', py: 4 }} />;
+  // MI's InboundEndpoint has no url/context fields at all (unlike RestApi, whose management API
+  // reports a ready-made url) — so for an MCP inbound, URL/Context below are read from the
+  // inbound's own source XML instead of the artifact fields every other MI type uses.
+  const selectedInboundName = selectedEntry?.type === 'InboundEndpoint' ? (selectedEntry.artifact.name?.toString() ?? '') : '';
+  const { isMcp: selectedIsMcp } = useMcpConfigEntry(selectedInboundName, envId, componentId, !!selectedInboundName);
+  const { data: selectedInboundSource } = useArtifactSource(envId, componentId, 'inbound-endpoint', selectedIsMcp ? selectedInboundName : '');
+  const selectedInboundNetworkConfig = useMemo(() => (selectedInboundSource ? parseInboundNetworkConfig(selectedInboundSource) : null), [selectedInboundSource]);
+
+  // A workflow integration lists workflow definitions, and the management API reports no package or
+  // API for them - Package read as an em dash and API only repeated the name in the selector - so
+  // the selector is named for what it holds and those two columns are dropped.
+  const selectorLabel = workflowOnly ? 'Workflow Definitions' : 'Endpoint';
+
+  if (isLoading)
+    return (
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '300px 1fr' }, columnGap: 3 }}>
+        <Skeleton variant="rounded" height={280} />
+        <CircularProgress size={24} sx={{ display: 'block', mx: 'auto', py: 4 }} />
+      </Box>
+    );
   if (allEntryPoints.length === 0)
     return (
       <Stack alignItems="center" sx={{ py: 4 }} gap={2}>
@@ -640,112 +713,78 @@ function EntryPointsList({
   const isProxy = selectedEntry?.type === 'ProxyService';
   const primaryLabel = isProxy ? '' : isTask ? 'Class' : isMI ? 'URL' : 'Package';
   const secondaryLabel = isProxy ? '' : isTask ? 'Group' : isMI ? 'Context' : 'API';
-  // A workflow integration lists workflow definitions, and the management API reports no package or
-  // API for them - Package read as an em dash and API only repeated the name in the selector - so
-  // the selector is named for what it holds and those two columns are dropped.
-  const selectorLabel = workflowOnly ? 'Workflow Definitions' : 'Endpoint';
+  const primaryValue =
+    !workflowOnly && !isProxy
+      ? (selectedIsMcp && selectedInboundNetworkConfig?.port ? `Port ${selectedInboundNetworkConfig.port}` : (isTask ? selectedEntry?.artifact.class : isMI ? selectedEntry?.artifact.url : selectedEntry?.artifact.package)?.toString())
+      : undefined;
+  const secondaryValue =
+    !workflowOnly && !isProxy
+      ? (selectedIsMcp && selectedInboundNetworkConfig?.context ? selectedInboundNetworkConfig.context : (isTask ? selectedEntry?.artifact.group : isMI ? selectedEntry?.artifact.context : selectedEntry?.artifact.name)?.toString())
+      : undefined;
 
   return (
-    <>
-      {/* Selector / Package / API grid — mirrors devant's endpoint panel layout. MI components
-          don't have a package/API concept, so they show URL/Context instead (or group/class for Tasks);
-          workflow integrations have neither and show the selector alone. */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: workflowOnly ? 'minmax(220px, 360px) 1fr' : '220px 1fr 1fr', columnGap: 2, rowGap: 0.75, alignItems: 'start', mb: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-          {selectorLabel}
-        </Typography>
-        {workflowOnly ? (
-          // Empty header cell above the actions, so grid auto-placement keeps the selector and the
-          // buttons on the same row.
-          <Box />
-        ) : (
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: workflowOnly ? 'minmax(220px, 320px) 1fr' : '300px 1fr' }, columnGap: 3, alignItems: 'start' }}>
+      {isNarrow ? (
+        <EntryPointCombobox options={allEntryPoints} selectedKey={activeKey} onSelect={setSelectedKey} label={selectorLabel} isMI={isMI} />
+      ) : (
+        <EntryPointPicker options={allEntryPoints} selectedKey={activeKey} onSelect={setSelectedKey} label={selectorLabel} showTypeFilter={isMI} />
+      )}
+
+      <Box sx={{ minWidth: 0 }}>
+        {selectedEntry && (
           <>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              {primaryLabel}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-              {secondaryLabel}
-            </Typography>
-          </>
-        )}
-
-        <Select
-          size="small"
-          value={activeKey}
-          onChange={(e) => setSelectedKey(e.target.value)}
-          inputProps={{ 'aria-label': selectorLabel }}
-          sx={{ fontSize: '13px', width: '100%' }}
-          renderValue={(val) => {
-            const entry = allEntryPoints.find(({ artifact: a, type }) => `${type}::${type === 'Automation' ? a.packageName : a.name}` === val);
-            if (!entry) return '';
-            const cfg = ENTRY_POINT_CONFIG[entry.type];
-            const raw = (cfg?.primaryDisplay && cfg.metaField ? (entry.artifact[cfg.metaField]?.toString() ?? entry.artifact.name?.toString()) : entry.type === 'Automation' ? entry.artifact.packageName?.toString() : entry.artifact.name?.toString()) ?? '';
-            // Chip is intentionally omitted here (closed box) — it would eat into the fixed-width
-            // box's space and truncate long names. It only shows in the open dropdown list below.
-            return raw.replace(/^\//, '');
-          }}>
-          {allEntryPoints.map(({ artifact: a, type }) => {
-            const cfg = ENTRY_POINT_CONFIG[type];
-            const rawLabel = (cfg?.primaryDisplay && cfg.metaField ? (a[cfg.metaField]?.toString() ?? a.name?.toString()) : type === 'Automation' ? a.packageName?.toString() : a.name?.toString()) ?? '';
-            const label = rawLabel.replace(/^\//, '');
-            const key = `${type}::${type === 'Automation' ? a.packageName : a.name}`;
-            return (
-              <MenuItem key={key} value={key} sx={{ fontSize: '13px' }}>
-                {isMI ? (
-                  <Stack direction="row" alignItems="center" gap={1}>
-                    <EntryTypeChip cfg={cfg} />
-                    <span>{label}</span>
-                  </Stack>
-                ) : (
-                  label
+            <Stack direction="row" alignItems="center" justifyContent="space-between" flexWrap="wrap" gap={1} sx={{ mb: 1.5 }}>
+              <Stack direction="row" alignItems="center" gap={1} sx={{ minWidth: 0 }}>
+                <Typography variant="h6" sx={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={selectedEntry.label}>
+                  {selectedEntry.label}
+                </Typography>
+                {isMI && <EntryTypeChip cfg={ENTRY_POINT_CONFIG[selectedEntry.type]} />}
+                {selectedEntry.enabled !== undefined && (
+                  <Tooltip title={selectedEntry.enabled ? 'Active' : 'Inactive'}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: selectedEntry.enabled ? 'success.main' : 'text.disabled', flexShrink: 0 }} />
+                  </Tooltip>
                 )}
-              </MenuItem>
-            );
-          })}
-        </Select>
+              </Stack>
+              {workflowOnly && (
+                <Stack direction="row" gap={1}>
+                  <WorkflowActions componentId={componentId} envId={envId} workflowType={selectedEntry.artifact.name?.toString() ?? ''} />
+                </Stack>
+              )}
+            </Stack>
 
-        {workflowOnly && selectedEntry && (
-          <Stack direction="row" gap={1} sx={{ alignSelf: 'center', justifyContent: 'flex-end' }}>
-            <WorkflowActions componentId={componentId} envId={envId} workflowType={selectedEntry.artifact.name?.toString() ?? ''} />
-          </Stack>
-        )}
-        {!workflowOnly &&
-          (() => {
-            if (isProxy)
-              return (
-                <>
-                  <Box />
-                  <Box />
-                </>
-              );
-            const primaryValue = (isTask ? selectedEntry?.artifact.class : isMI ? selectedEntry?.artifact.url : selectedEntry?.artifact.package)?.toString();
-            const secondaryValue = (isTask ? selectedEntry?.artifact.group : isMI ? selectedEntry?.artifact.context : selectedEntry?.artifact.name)?.toString();
-            return (
-              <>
-                <Stack direction="row" alignItems="center" gap={0.75} sx={{ minWidth: 0, alignSelf: 'center' }}>
+            {!workflowOnly && !isProxy && (
+              <Stack gap={0.5} sx={{ mb: 1 }}>
+                <Stack direction="row" alignItems="center" gap={1}>
                   <Box component="span" sx={{ display: 'flex', alignItems: 'center', color: 'primary.main' }}>
                     {isTask ? <Layers size={15} /> : isMI ? <LinkIcon size={15} /> : <Package size={15} />}
                   </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 60 }}>
+                    {primaryLabel}
+                  </Typography>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {primaryValue ?? '—'}
                   </Typography>
                   {primaryValue ? <CopyButton value={primaryValue} label={primaryLabel} /> : null}
                 </Stack>
-
-                <Stack direction="row" alignItems="center" gap={0.75} sx={{ alignSelf: 'center' }}>
+                <Stack direction="row" alignItems="center" gap={1}>
                   <Box component="span" sx={{ display: 'flex', alignItems: 'center', color: 'primary.main' }}>
                     <Tag size={15} />
                   </Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ minWidth: 60 }}>
+                    {secondaryLabel}
+                  </Typography>
                   <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
                     {secondaryValue ?? '—'}
                   </Typography>
                 </Stack>
-              </>
-            );
-          })()}
+              </Stack>
+            )}
+
+            <EntryPointDetail selected={{ artifact: selectedEntry.artifact, artifactType: selectedEntry.type, envId, componentId, projectId }} onOpenDrawerTab={(tab) => onOpenDrawer(selectedEntry.artifact, selectedEntry.type, envId, tab)} />
+          </>
+        )}
       </Box>
-      {selectedEntry && <EntryPointDetail selected={{ artifact: selectedEntry.artifact, artifactType: selectedEntry.type, envId, componentId, projectId }} onOpenDrawerTab={(tab) => onOpenDrawer(selectedEntry.artifact, selectedEntry.type, envId, tab)} />}
-    </>
+    </Box>
   );
 }
 
@@ -1106,7 +1145,7 @@ export default function Environment({
         {(componentType !== 'MI' || viewMode === 'entryPoints') && (
           <EntryPointsList envId={env.id} componentId={componentId} projectId={projectId} componentType={componentType} displayType={displayType} isOnline={isOnline} onOpenDrawer={onOpenDrawerForTab} onSelectionChange={setCurrentEntryPoint} />
         )}
-        {componentType === 'MI' && viewMode === 'allArtifacts' && <ArtifactTypeSelector envId={env.id} componentId={componentId} onSelectArtifact={onSelectArtifact} />}
+        {componentType === 'MI' && viewMode === 'allArtifacts' && <ArtifactTypeSelector envId={env.id} projectId={projectId} componentId={componentId} onSelectArtifact={onSelectArtifact} />}
       </CardContent>
     </Card>
   );

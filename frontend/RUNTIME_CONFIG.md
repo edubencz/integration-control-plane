@@ -22,6 +22,7 @@ This application supports runtime configuration, allowing you to modify backend 
   "VITE_GRAPHQL_URL": "https://localhost:9446/graphql",
   "VITE_AUTH_BASE_URL": "https://localhost:9446/auth",
   "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability",
+  "VITE_MI_DEPLOYMENTS_URL": "https://localhost:9446/icp/mi_deployments",
   "VITE_SSO_ENABLED": false,
   "VITE_SSO_ISSUER": "",
   "VITE_PASSWORD_LOGIN_DISABLED": false,
@@ -40,7 +41,8 @@ Edit `public/config.json` with your backend URLs, then restart the dev server:
 {
   "VITE_GRAPHQL_URL": "https://localhost:9446/graphql",
   "VITE_AUTH_BASE_URL": "https://localhost:9446/auth",
-  "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability"
+  "VITE_OBSERVABILITY_URL": "https://localhost:9446/icp/observability",
+  "VITE_MI_DEPLOYMENTS_URL": "https://localhost:9446/icp/mi_deployments"
 }
 ```
 
@@ -69,7 +71,8 @@ cat > /usr/share/nginx/html/config.json <<EOF
 {
   "VITE_GRAPHQL_URL": "${GRAPHQL_URL:-https://localhost:9446/graphql}",
   "VITE_AUTH_BASE_URL": "${AUTH_BASE_URL:-https://localhost:9446/auth}",
-  "VITE_OBSERVABILITY_URL": "${OBSERVABILITY_URL:-https://localhost:9446/icp/observability}"
+  "VITE_OBSERVABILITY_URL": "${OBSERVABILITY_URL:-https://localhost:9446/icp/observability}",
+  "VITE_MI_DEPLOYMENTS_URL": "${MI_DEPLOYMENTS_URL:-https://localhost:9446/icp/mi_deployments}"
 }
 EOF
 
@@ -93,6 +96,7 @@ Run with:
 docker run -e GRAPHQL_URL=https://api.prod.com/graphql \
            -e AUTH_BASE_URL=https://auth.prod.com/auth \
            -e OBSERVABILITY_URL=https://api.prod.com/icp/observability \
+           -e MI_DEPLOYMENTS_URL=https://api.prod.com/icp/mi_deployments \
            my-app
 ```
 

@@ -1,0 +1,7 @@
+include:
+  - local: .cicd/deploy/job-dev.yml
+  - local: .cicd/deploy/job-hml.yml
+  - local: .cicd/deploy/job-prd.yml
+  - local: .cicd/deploy/job-rls.yml
+  - local: .cicd/deploy/script.yml
+  - local: .cicd/deploy/rules.yml
